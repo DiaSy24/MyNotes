@@ -1,0 +1,623 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --bg-app: #191919;
+  --bg-sidebar: #131313;
+  --bg-card: #202020;
+  --bg-card-hover: #262626;
+  --bg-input: #252525;
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-active: rgba(255, 255, 255, 0.1);
+  
+  --border-main: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 255, 255, 0.16);
+  
+  --text-main: #e3e3e3;
+  --text-secondary: #999999;
+  --text-muted: #666666;
+  
+  --accent-blue: #2eaadc;
+  --accent-purple: #8b5cf6;
+  
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-lg: -8px 0 32px rgba(0, 0, 0, 0.5);
+
+  --status-done-bg: rgba(46, 117, 89, 0.35);
+  --status-done-text: #86efac;
+  --status-done-border: rgba(53, 142, 107, 0.5);
+  --status-done-dot: #4ade80;
+
+  --status-progress-bg: rgba(37, 99, 235, 0.25);
+  --status-progress-text: #93c5fd;
+  --status-progress-border: rgba(59, 130, 246, 0.4);
+  --status-progress-dot: #60a5fa;
+
+  --status-todo-bg: rgba(107, 114, 128, 0.25);
+  --status-todo-text: #d1d5db;
+  --status-todo-border: rgba(156, 163, 175, 0.3);
+  --status-todo-dot: #9ca3af;
+
+  --status-review-bg: rgba(217, 119, 6, 0.25);
+  --status-review-text: #fde68a;
+  --status-review-border: rgba(245, 158, 11, 0.4);
+  --status-review-dot: #fbbf24;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--bg-app);
+  color: var(--text-main);
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Layout App Container */
+.app-container {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  background-color: var(--bg-app);
+  position: relative;
+}
+
+/* Resizable Sidebar */
+.sidebar {
+  position: relative;
+  background-color: var(--bg-sidebar);
+  border-right: 1px solid var(--border-main);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  user-select: none;
+  z-index: 10;
+  min-width: 180px;
+  max-width: 450px;
+}
+
+/* Drag Handle Splitter Bar */
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 20;
+  transition: background 0.15s;
+}
+
+.sidebar-resizer:hover,
+.sidebar-resizer.is-dragging {
+  background: rgba(46, 170, 220, 0.5);
+}
+
+.sidebar-header {
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-main);
+}
+
+.workspace-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-main);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+
+.workspace-badge:hover {
+  background-color: var(--bg-hover);
+}
+
+.sidebar-section {
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sidebar-section-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding: 6px 8px;
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-decoration: none;
+  overflow: hidden;
+}
+
+.sidebar-item:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-main);
+}
+
+.sidebar-item.active {
+  background-color: var(--bg-active);
+  color: var(--text-main);
+  font-weight: 500;
+}
+
+/* Overflow Name Wrapper */
+.sidebar-item-name {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  /* Allow text to truncate with ellipsis if it doesn't fit and isn't animating */
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  display: flex; /* prevents line height quirks */
+  align-items: center;
+}
+
+.sidebar-item-name-text {
+  display: inline-block;
+  white-space: nowrap;
+  transition: transform 0.3s ease;
+}
+
+/* On hover, if it's long, we animate. If it's short, it just wiggles slightly, which is an okay CSS-only fallback. */
+.sidebar-item:hover .sidebar-item-name-text {
+  animation: scrollTextIfNeeded 4s linear infinite alternate;
+}
+
+@keyframes scrollTextIfNeeded {
+  0%, 15% { transform: translateX(0); }
+  85%, 100% { transform: translateX(-35%); }
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border-main);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sync-status-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-main);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+}
+
+/* Main Content Area */
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg-app);
+}
+
+/* Notion Top Header Tabs */
+.notion-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px 8px 24px;
+  border-bottom: 1px solid var(--border-main);
+  background-color: var(--bg-app);
+}
+
+.notion-views-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.view-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.view-tab-btn:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-main);
+}
+
+.view-tab-btn.active {
+  background-color: rgba(255, 255, 255, 0.12);
+  color: var(--text-main);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.icon-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.icon-btn:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-main);
+}
+
+/* Notion Table View Container */
+.table-view-container {
+  flex: 1;
+  overflow: auto;
+  padding: 0 24px 24px 24px;
+}
+
+.notion-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  font-size: 0.9rem;
+}
+
+.notion-table th {
+  text-align: left;
+  padding: 10px 14px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-size: 0.82rem;
+  border-bottom: 1px solid var(--border-main);
+  border-right: 1px solid rgba(255, 255, 255, 0.03);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.col-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+  transition: background 0.2s;
+}
+
+.col-resizer:hover,
+.col-resizer:active {
+  background: rgba(46, 170, 220, 0.5);
+}
+
+.notion-table td {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-main);
+  border-right: 1px solid rgba(255, 255, 255, 0.03);
+  color: var(--text-main);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.notion-table tr:hover {
+  background-color: var(--bg-hover);
+}
+
+.project-title-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.project-title-cell:hover .open-drawer-hint {
+  opacity: 1;
+}
+
+.open-drawer-hint {
+  opacity: 0;
+  font-size: 0.72rem;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  transition: opacity 0.15s;
+}
+
+/* Status Pill Badges */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+  user-select: none;
+}
+
+.status-pill:hover {
+  transform: scale(1.03);
+}
+
+.status-pill-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.status-pill.status-Done {
+  background-color: var(--status-done-bg);
+  color: var(--status-done-text);
+  border-color: var(--status-done-border);
+}
+
+.status-pill.status-Done .status-pill-dot {
+  background-color: var(--status-done-dot);
+}
+
+.status-pill.status-In-Progress {
+  background-color: var(--status-progress-bg);
+  color: var(--status-progress-text);
+  border-color: var(--status-progress-border);
+}
+
+.status-pill.status-In-Progress .status-pill-dot {
+  background-color: var(--status-progress-dot);
+}
+
+.status-pill.status-To-Do {
+  background-color: var(--status-todo-bg);
+  color: var(--status-todo-text);
+  border-color: var(--status-todo-border);
+}
+
+.status-pill.status-To-Do .status-pill-dot {
+  background-color: var(--status-todo-dot);
+}
+
+.status-pill.status-In-Review {
+  background-color: var(--status-review-bg);
+  color: var(--status-review-text);
+  border-color: var(--status-review-border);
+}
+
+.status-pill.status-In-Review .status-pill-dot {
+  background-color: var(--status-review-dot);
+}
+
+/* Slide-over Note Detail Drawer */
+.drawer-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+  z-index: 100;
+  display: flex;
+  justify-content: flex-end;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.drawer-content {
+  width: 580px;
+  max-width: 90vw;
+  height: 100%;
+  background: #1e1e1e;
+  border-left: 1px solid var(--border-main);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  animation: slideLeft 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.drawer-header {
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-main);
+}
+
+.drawer-body {
+  flex: 1;
+  padding: 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.note-title-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--text-main);
+  font-family: inherit;
+  margin-bottom: 8px;
+}
+
+.note-meta-grid {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 12px;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border-main);
+  font-size: 0.88rem;
+}
+
+.meta-label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.note-content-editor {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-main);
+  border-radius: 8px;
+  padding: 16px;
+  min-height: 250px;
+  outline: none;
+  color: var(--text-main);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+/* Kanban Board View */
+.kanban-container {
+  display: flex;
+  gap: 16px;
+  padding: 16px 24px;
+  overflow-x: auto;
+  height: calc(100vh - 70px);
+}
+
+.kanban-column {
+  flex: 0 0 300px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-main);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
+}
+
+.kanban-column-header {
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-main);
+}
+
+.kanban-cards {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.kanban-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-main);
+  border-radius: 8px;
+  padding: 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.kanban-card:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-hover);
+  transform: translateY(-2px);
+}
+
+/* Modal Window */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-card {
+  width: 480px;
+  max-width: 95vw;
+  background: #202020;
+  border: 1px solid var(--border-main);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideLeft {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
