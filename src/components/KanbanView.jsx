@@ -2,10 +2,10 @@ import React from 'react';
 import { Plus, MoreHorizontal, FileText, CheckCircle2 } from 'lucide-react';
 
 const COLUMNS = [
-  { id: 'To Do', label: 'Yapılacaklar', color: '#9ca3af' },
-  { id: 'In Progress', label: 'Devam Edenler', color: '#60a5fa' },
-  { id: 'In Review', label: 'İncelemedekiler', color: '#fbbf24' },
-  { id: 'Done', label: 'Tamamlananlar', color: '#4ade80' }
+  { id: 'Yapılacaklar', label: 'Yapılacaklar', color: '#9ca3af' },
+  { id: 'Devam Ediyor', label: 'Devam Ediyor', color: '#60a5fa' },
+  { id: 'İnceleniyor', label: 'İnceleniyor', color: '#fbbf24' },
+  { id: 'Tamamlandı', label: 'Tamamlandı', color: '#4ade80' }
 ];
 
 export default function KanbanView({ notes, onSelectNote, onUpdateStatus, onNewNote }) {

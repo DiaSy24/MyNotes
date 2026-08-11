@@ -114,7 +114,17 @@ export default function App() {
     }
     
     const notesData = await fetchNotes();
-    setNotes(notesData);
+    
+    // Normalize legacy statuses
+    const normalizedNotes = notesData.map(n => {
+      let st = n.status;
+      if (st === 'To Do') st = 'Yapılacaklar';
+      else if (st === 'In Progress') st = 'Devam Ediyor';
+      else if (st === 'In Review') st = 'İnceleniyor';
+      else if (st === 'Done') st = 'Tamamlandı';
+      return { ...n, status: st };
+    });
+    setNotes(normalizedNotes);
     
     
     const trashData = await fetchTrashNotes();
@@ -170,13 +180,37 @@ export default function App() {
     const noteToUpdate = notes.find(n => n.id === noteId);
     if (!noteToUpdate) return;
     
-    const updatedNote = { ...noteToUpdate, status: newStatus };
+    let updatedNote = { ...noteToUpdate, status: newStatus };
+
+    // Otomatik tarih atama mantığı
+    if (newStatus === 'Devam Ediyor' && !updatedNote.startDate) {
+      updatedNote.startDate = new Date().toISOString();
+    }
+    if (newStatus === 'Tamamlandı') {
+      updatedNote.endDate = new Date().toISOString();
+    }
+
     const result = await saveNote(updatedNote);
     
     if (result) {
-       setNotes(notes.map(n => n.id === noteId ? { ...n, status: newStatus, updatedAt: result.updated_at } : n));
+       setNotes(notes.map(n => n.id === noteId ? { ...updatedNote, updatedAt: result.updated_at } : n));
        if (selectedNote && selectedNote.id === noteId) {
-         setSelectedNote({ ...selectedNote, status: newStatus, updatedAt: result.updated_at });
+         setSelectedNote({ ...updatedNote, updatedAt: result.updated_at });
+       }
+    }
+  };
+
+  const handleUpdateDates = async (noteId, newStartDate, newEndDate) => {
+    const noteToUpdate = notes.find(n => n.id === noteId);
+    if (!noteToUpdate) return;
+    
+    const updatedNote = { ...noteToUpdate, startDate: newStartDate, endDate: newEndDate };
+    const result = await saveNote(updatedNote);
+    
+    if (result) {
+       setNotes(notes.map(n => n.id === noteId ? { ...updatedNote, updatedAt: result.updated_at } : n));
+       if (selectedNote && selectedNote.id === noteId) {
+         setSelectedNote({ ...updatedNote, updatedAt: result.updated_at });
        }
     }
   };
@@ -239,7 +273,7 @@ export default function App() {
       id: `note-${Date.now()}`, // Temporary ID until saved to DB
       workspaceId: activeWorkspaceId,
       title: 'Yeni Not / Görev Başlığı',
-      status: 'To Do',
+      status: 'Yapılacaklar',
       priority: 'Medium',
       assignee: defaultMember,
       category: 'Genel',
@@ -376,6 +410,7 @@ export default function App() {
                 onSelectNote={setSelectedNote}
                 onUpdateStatus={handleUpdateStatus}
                 onUpdateTitle={handleUpdateTitle}
+                onUpdateDates={handleUpdateDates}
                 onNewNote={handleNewNote}
                 onReorderNotes={handleReorderNotes}
               />
@@ -423,6 +458,7 @@ export default function App() {
                 <GanttView 
                   notes={displayedNotes}
                   onSelectNote={setSelectedNote}
+                  onUpdateDates={handleUpdateDates}
                 />
               </div>
             )}

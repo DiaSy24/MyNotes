@@ -121,6 +121,8 @@ export const fetchNotes = async () => {
     category: 'Genel', // Hardcoded for now or add to schema
     updatedAt: n.updated_at,
     createdAt: n.created_at,
+    startDate: n.start_date,
+    endDate: n.end_date,
     is_trash: n.is_trash
   })) || [];
 };
@@ -199,6 +201,8 @@ export const saveNote = async (note) => {
     title: note.title,
     content: note.content,
     status: note.status,
+    start_date: note.startDate,
+    end_date: note.endDate,
     is_trash: note.is_trash || false
   };
 

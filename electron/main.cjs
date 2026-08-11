@@ -61,18 +61,8 @@ autoUpdater.on('update-available', (info) => {
 });
 
 autoUpdater.on('update-downloaded', (info) => {
-  log.info('Update downloaded.');
-  dialog.showMessageBox({
-    type: 'question',
-    buttons: ['Şimdi Yeniden Başlat ve Kur', 'Daha Sonra'],
-    defaultId: 0,
-    title: 'Güncelleme İndirildi',
-    message: 'Yeni sürüm başarıyla indirildi. Güncellemeyi yüklemek için uygulamayı şimdi yeniden başlatmak ister misiniz?'
-  }).then((result) => {
-    if (result.response === 0) {
-      autoUpdater.quitAndInstall();
-    }
-  });
+  log.info('Update downloaded. Installing automatically...');
+  autoUpdater.quitAndInstall();
 });
 
 autoUpdater.on('error', (err) => {

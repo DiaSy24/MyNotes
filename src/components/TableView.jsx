@@ -15,10 +15,10 @@ import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSo
 import { CSS } from '@dnd-kit/utilities';
 
 const STATUS_OPTIONS = [
-  { id: 'To Do', label: 'Yapılacaklar', colorClass: 'status-To-Do' },
-  { id: 'In Progress', label: 'Devam Edenler', colorClass: 'status-In-Progress' },
-  { id: 'In Review', label: 'İncelemedekiler', colorClass: 'status-In-Review' },
-  { id: 'Done', label: 'Tamamlananlar', colorClass: 'status-Done' }
+  { id: 'Yapılacaklar', label: 'Yapılacaklar', colorClass: 'status-To-Do' },
+  { id: 'Devam Ediyor', label: 'Devam Ediyor', colorClass: 'status-In-Progress' },
+  { id: 'İnceleniyor', label: 'İnceleniyor', colorClass: 'status-In-Review' },
+  { id: 'Tamamlandı', label: 'Tamamlandı', colorClass: 'status-Done' }
 ];
 
 export default function TableView({ 
@@ -28,6 +28,7 @@ export default function TableView({
   onSelectNote, 
   onUpdateStatus, 
   onUpdateTitle,
+  onUpdateDates,
   onNewNote,
   onReorderNotes 
 }) {
@@ -41,7 +42,7 @@ export default function TableView({
   // Column widths state (in pixels)
   const [colWidths, setColWidths] = useState(() => {
     const saved = localStorage.getItem('mynotes_col_widths');
-    return saved ? JSON.parse(saved) : { title: 380, status: 160, category: 140, assignee: 140, createdAt: 150 };
+    return saved ? JSON.parse(saved) : { title: 380, status: 160, category: 140, assignee: 140, createdAt: 150, endDate: 150 };
   });
 
   const [resizingCol, setResizingCol] = useState(null);
@@ -334,6 +335,20 @@ export default function TableView({
                   onDoubleClick={(e) => handleAutoFit(e, 'createdAt', 4)}
                 />
               </th>
+              
+              <th style={{ width: colWidths.endDate, position: 'relative' }}>
+                <div style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', height: '100%' }} onClick={() => handleSortToggle('endDate')}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    <Calendar size={13} style={{ color: 'var(--text-muted)' }} />
+                    Bitiş Tarihi {sortField === 'endDate' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                  </span>
+                </div>
+                <div 
+                  className="col-resizer" 
+                  onMouseDown={(e) => handleResizeStart(e, 'endDate')}
+                  onDoubleClick={(e) => handleAutoFit(e, 'endDate', 5)}
+                />
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -353,6 +368,7 @@ export default function TableView({
                   setEditingStatusId={setEditingStatusId}
                   STATUS_OPTIONS={STATUS_OPTIONS}
                   onUpdateStatus={onUpdateStatus}
+                  onUpdateDates={onUpdateDates}
                   formatDate={formatDate}
                 />
               );
@@ -361,7 +377,7 @@ export default function TableView({
 
             {filteredNotes.length === 0 && (
               <tr>
-                <td colSpan={5} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
+                <td colSpan={6} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
                   Henüz not bulunmuyor veya arama kriterine uyan not yok.
                 </td>
               </tr>
@@ -369,7 +385,7 @@ export default function TableView({
 
             {/* Quick Add Row */}
             <tr>
-              <td colSpan={5} onClick={onNewNote} style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>
+              <td colSpan={6} onClick={onNewNote} style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0' }}>
                   <Plus size={16} />
                   <span>Yeni Not Ekle...</span>
@@ -396,6 +412,7 @@ function SortableNoteRow({
   setEditingStatusId,
   STATUS_OPTIONS,
   onUpdateStatus,
+  onUpdateDates,
   formatDate
 }) {
   const {
@@ -474,7 +491,7 @@ function SortableNoteRow({
       {/* Status Column */}
       <td style={{ position: 'relative' }}>
         <div 
-          className={`status-pill status-${note.status.replace(/\s+/g, '-')}`}
+          className={`status-pill ${STATUS_OPTIONS.find(opt => opt.id === note.status)?.colorClass || 'status-To-Do'}`}
           onClick={(e) => {
             e.stopPropagation();
             setEditingStatusId(editingStatusId === note.id ? null : note.id);
@@ -506,7 +523,7 @@ function SortableNoteRow({
             {STATUS_OPTIONS.map(opt => (
               <div 
                 key={opt.id}
-                className={`status-pill status-${opt.id.replace(/\s+/g, '-')}`}
+                className={`status-pill ${opt.colorClass}`}
                 style={{ justifyContent: 'flex-start', width: '100%', cursor: 'pointer' }}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -552,6 +569,31 @@ function SortableNoteRow({
         <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
           {formatDate(note.createdAt)}
         </span>
+      </td>
+
+      {/* End Date Column */}
+      <td>
+        <input 
+          type="date" 
+          value={note.endDate ? note.endDate.split('T')[0] : ''}
+          onChange={(e) => {
+            const newDate = e.target.value ? new Date(e.target.value).toISOString() : null;
+            if (onUpdateDates) {
+               onUpdateDates(note.id, note.startDate || note.createdAt, newDate);
+            }
+          }}
+          style={{
+            background: 'rgba(255, 255, 255, 0.05)',
+            border: '1px solid var(--border-main)',
+            borderRadius: '4px',
+            color: 'var(--text-main)',
+            padding: '2px 4px',
+            fontSize: '0.8rem',
+            outline: 'none',
+            colorScheme: 'dark',
+            width: '100%'
+          }}
+        />
       </td>
     </tr>
   );

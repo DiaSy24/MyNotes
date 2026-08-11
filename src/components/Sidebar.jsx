@@ -282,42 +282,42 @@ export default function Sidebar({
         </div>
 
         <div 
-          className={`sidebar-item ${activeCategory === 'To Do' ? 'active' : ''}`}
-          onClick={() => setActiveCategory('To Do')}
+          className={`sidebar-item ${activeCategory === 'Yapılacaklar' ? 'active' : ''}`}
+          onClick={() => setActiveCategory('Yapılacaklar')}
         >
           <ListTodo size={16} style={{ color: 'var(--status-todo-dot)', flexShrink: 0 }} />
           <div className="sidebar-item-name">
-            <span className="sidebar-item-name-text">Yapılacaklar (To Do)</span>
+            <span className="sidebar-item-name-text">Yapılacaklar</span>
           </div>
         </div>
 
         <div 
-          className={`sidebar-item ${activeCategory === 'In Progress' ? 'active' : ''}`}
-          onClick={() => setActiveCategory('In Progress')}
+          className={`sidebar-item ${activeCategory === 'Devam Ediyor' ? 'active' : ''}`}
+          onClick={() => setActiveCategory('Devam Ediyor')}
         >
           <Sparkles size={16} style={{ color: 'var(--status-progress-dot)', flexShrink: 0 }} />
           <div className="sidebar-item-name">
-            <span className="sidebar-item-name-text">Devam Edenler (In Progress)</span>
+            <span className="sidebar-item-name-text">Devam Ediyor</span>
           </div>
         </div>
 
         <div 
-          className={`sidebar-item ${activeCategory === 'In Review' ? 'active' : ''}`}
-          onClick={() => setActiveCategory('In Review')}
+          className={`sidebar-item ${activeCategory === 'İnceleniyor' ? 'active' : ''}`}
+          onClick={() => setActiveCategory('İnceleniyor')}
         >
           <Clock size={16} style={{ color: 'var(--status-review-dot)', flexShrink: 0 }} />
           <div className="sidebar-item-name">
-            <span className="sidebar-item-name-text">İncelemedekiler (In Review)</span>
+            <span className="sidebar-item-name-text">İnceleniyor</span>
           </div>
         </div>
 
         <div 
-          className={`sidebar-item ${activeCategory === 'Done' ? 'active' : ''}`}
-          onClick={() => setActiveCategory('Done')}
+          className={`sidebar-item ${activeCategory === 'Tamamlandı' ? 'active' : ''}`}
+          onClick={() => setActiveCategory('Tamamlandı')}
         >
           <CheckCircle2 size={16} style={{ color: 'var(--status-done-dot)', flexShrink: 0 }} />
           <div className="sidebar-item-name">
-            <span className="sidebar-item-name-text">Tamamlananlar (Done)</span>
+            <span className="sidebar-item-name-text">Tamamlandı</span>
           </div>
         </div>
 

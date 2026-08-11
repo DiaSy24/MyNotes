@@ -37,6 +37,7 @@
   "build": {
     "appId": "com.mynotes.desktop",
     "productName": "MyNotes",
+    "artifactName": "${productName}.Setup.${version}.${ext}",
     "directories": {
       "output": "dist_electron"
     },

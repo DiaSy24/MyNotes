@@ -13,7 +13,7 @@ import {
   Calendar
 } from 'lucide-react';
 
-const STATUS_OPTIONS = ['To Do', 'In Progress', 'In Review', 'Done'];
+const STATUS_OPTIONS = ['Yapılacaklar', 'Devam Ediyor', 'İnceleniyor', 'Tamamlandı'];
 
 export default function NoteDetailDrawer({ 
   note, 
@@ -30,6 +30,8 @@ export default function NoteDetailDrawer({
   const [category, setCategory] = useState(note.category || '');
   const [assignee, setAssignee] = useState(note.assignee || (projectMembers[0]?.name || 'Siz (Hesabınız)'));
   const [content, setContent] = useState(note.content || '');
+  const [startDate, setStartDate] = useState(note.startDate || '');
+  const [endDate, setEndDate] = useState(note.endDate || '');
   const [isSaved, setIsSaved] = useState(false);
 
   useEffect(() => {
@@ -38,6 +40,8 @@ export default function NoteDetailDrawer({
     setCategory(note.category || '');
     setAssignee(note.assignee || (projectMembers[0]?.name || 'Siz (Hesabınız)'));
     setContent(note.content || '');
+    setStartDate(note.startDate || '');
+    setEndDate(note.endDate || '');
     setIsSaved(false);
   }, [note]);
 
@@ -47,6 +51,8 @@ export default function NoteDetailDrawer({
     if (field === 'category') setCategory(value);
     if (field === 'assignee') setAssignee(value);
     if (field === 'content') setContent(value);
+    if (field === 'startDate') setStartDate(value);
+    if (field === 'endDate') setEndDate(value);
     setIsSaved(false);
   };
 
@@ -58,6 +64,8 @@ export default function NoteDetailDrawer({
       category,
       assignee,
       content,
+      startDate,
+      endDate,
       updatedAt: new Date().toISOString()
     };
     onSave(updatedNote);
@@ -74,6 +82,20 @@ export default function NoteDetailDrawer({
     if (!isoString) return '-';
     const date = new Date(isoString);
     return date.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
+  const formatForDateInput = (isoString) => {
+    if (!isoString) return '';
+    // Use local date part to avoid timezone shifts
+    const d = new Date(isoString);
+    const offset = d.getTimezoneOffset();
+    d.setMinutes(d.getMinutes() - offset);
+    return d.toISOString().split('T')[0];
+  };
+
+  const parseDateInput = (dateStr) => {
+    if (!dateStr) return null;
+    return new Date(dateStr).toISOString();
   };
 
   return (
@@ -144,7 +166,8 @@ export default function NoteDetailDrawer({
                   outline: 'none',
                   fontSize: '0.85rem',
                   fontWeight: 600,
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  width: '100%'
                 }}
               >
                 {STATUS_OPTIONS.map(opt => (
@@ -204,6 +227,46 @@ export default function NoteDetailDrawer({
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
               <Calendar size={14} style={{ color: 'var(--text-muted)' }} />
               <span>{formatDateFull(note.createdAt)}</span>
+            </div>
+
+            <div className="meta-label">Başlangıç Tarihi</div>
+            <div>
+              <input 
+                type="date"
+                value={formatForDateInput(startDate)}
+                onChange={(e) => handleLocalChange('startDate', parseDateInput(e.target.value))}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  color: 'var(--text-main)',
+                  border: '1px solid var(--border-main)',
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  outline: 'none',
+                  fontSize: '0.85rem',
+                  width: '100%',
+                  colorScheme: 'dark'
+                }}
+              />
+            </div>
+
+            <div className="meta-label">Bitiş Tarihi</div>
+            <div>
+              <input 
+                type="date"
+                value={formatForDateInput(endDate)}
+                onChange={(e) => handleLocalChange('endDate', parseDateInput(e.target.value))}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  color: 'var(--text-main)',
+                  border: '1px solid var(--border-main)',
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  outline: 'none',
+                  fontSize: '0.85rem',
+                  width: '100%',
+                  colorScheme: 'dark'
+                }}
+              />
             </div>
           </div>
 

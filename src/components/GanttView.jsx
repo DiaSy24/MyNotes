@@ -1,22 +1,17 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Calendar, Clock, AlertCircle } from 'lucide-react';
+import { Calendar, Clock, AlertCircle, Info } from 'lucide-react';
 
-// Basit bir string hash fonksiyonu - notların hep aynı günde kalmasını sağlamak için
-const hashString = (str) => {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return Math.abs(hash);
-};
-
-export default function GanttView({ notes, onSelectNote }) {
+export default function GanttView({ notes, onSelectNote, onUpdateDates }) {
   const headerScrollRef = useRef(null);
   const bodyScrollRef = useRef(null);
 
   const [days, setDays] = useState([]);
-  const [todayIndex, setTodayIndex] = useState(5);
+  const [timelineStart, setTimelineStart] = useState(new Date());
   
+  const [draggingNote, setDraggingNote] = useState(null);
+  const [dragType, setDragType] = useState(null);
+  const [previewDates, setPreviewDates] = useState(null);
+
   // Sütun genişliği
   const COL_WIDTH = 40;
 
@@ -24,23 +19,36 @@ export default function GanttView({ notes, onSelectNote }) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const startDate = new Date(today);
-    // Bugünün tarihinden 5 gün öncesinden başlat
-    startDate.setDate(today.getDate() - 5);
+    let minDate = new Date(today);
+    minDate.setDate(minDate.getDate() - 5);
 
+    notes.forEach(n => {
+      const d = new Date(n.startDate || n.createdAt);
+      if (d < minDate) {
+        minDate = new Date(d);
+        minDate.setHours(0, 0, 0, 0);
+      }
+    });
+
+    // Padding before the first task
+    minDate.setDate(minDate.getDate() - 3);
+    setTimelineStart(minDate);
+
+    // 60 günlük bir takvim oluştur
     const generatedDays = [];
-    for (let i = 0; i < 35; i++) {
-      const d = new Date(startDate);
-      d.setDate(startDate.getDate() + i);
+    for (let i = 0; i < 60; i++) {
+      const d = new Date(minDate);
+      d.setDate(minDate.getDate() + i);
       generatedDays.push(d);
     }
     setDays(generatedDays);
     
-    // Sayfa açılışında bugüne doğru hafif kaydır (örnek olarak biraz sağa)
+    // Sayfa açılışında bugüne doğru hafif kaydır
     if (bodyScrollRef.current) {
-      bodyScrollRef.current.scrollLeft = 2 * COL_WIDTH; 
+      const todayOffsetDays = Math.floor((today.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
+      bodyScrollRef.current.scrollLeft = Math.max(0, (todayOffsetDays - 3) * COL_WIDTH);
     }
-  }, []);
+  }, [notes.length]); // Sadece not sayısı değiştiğinde veya ilk yüklemede takvimi kur
 
   const handleScroll = (e) => {
     if (headerScrollRef.current) {
@@ -50,12 +58,86 @@ export default function GanttView({ notes, onSelectNote }) {
 
   const getStatusColors = (status) => {
     switch (status) {
-      case 'In Progress': return { bg: 'var(--status-progress-bg)', border: 'var(--status-progress-border)', text: 'var(--status-progress-text)' };
-      case 'In Review': return { bg: 'var(--status-review-bg)', border: 'var(--status-review-border)', text: 'var(--status-review-text)' };
-      case 'Done': return { bg: 'var(--status-done-bg)', border: 'var(--status-done-border)', text: 'var(--status-done-text)' };
+      case 'Devam Ediyor': return { bg: 'var(--status-progress-bg)', border: 'var(--status-progress-border)', text: 'var(--status-progress-text)' };
+      case 'İnceleniyor': return { bg: 'var(--status-review-bg)', border: 'var(--status-review-border)', text: 'var(--status-review-text)' };
+      case 'Tamamlandı': return { bg: 'var(--status-done-bg)', border: 'var(--status-done-border)', text: 'var(--status-done-text)' };
       default: return { bg: 'var(--status-todo-bg)', border: 'var(--status-todo-border)', text: 'var(--status-todo-text)' };
     }
   };
+
+  const getNoteDates = (note) => {
+    const start = new Date(note.startDate || note.createdAt);
+    start.setHours(0, 0, 0, 0);
+    
+    const end = note.endDate ? new Date(note.endDate) : new Date(start);
+    end.setHours(0, 0, 0, 0);
+    if (end < start) end.setTime(start.getTime()); 
+    
+    return { start, end };
+  };
+
+  const handleEdgeMouseDown = (e, note, type) => {
+    // Prevent selecting text while dragging
+    e.preventDefault();
+    e.stopPropagation();
+    const { start, end } = getNoteDates(note);
+    setDraggingNote({
+      id: note.id,
+      startX: e.clientX,
+      originalStart: start,
+      originalEnd: end
+    });
+    setDragType(type);
+    setPreviewDates({
+      id: note.id,
+      start: start,
+      end: end
+    });
+  };
+
+  useEffect(() => {
+    if (!draggingNote || !dragType) return;
+
+    const handleMouseMove = (e) => {
+      const deltaX = e.clientX - draggingNote.startX;
+      const deltaDays = Math.round(deltaX / COL_WIDTH);
+      
+      const newStart = new Date(draggingNote.originalStart);
+      const newEnd = new Date(draggingNote.originalEnd);
+      
+      if (dragType === 'start') {
+        newStart.setDate(newStart.getDate() + deltaDays);
+        if (newStart > newEnd) newStart.setTime(newEnd.getTime());
+      } else if (dragType === 'end') {
+        newEnd.setDate(newEnd.getDate() + deltaDays);
+        if (newEnd < newStart) newEnd.setTime(newStart.getTime());
+      }
+      
+      setPreviewDates({
+        id: draggingNote.id,
+        start: newStart,
+        end: newEnd
+      });
+    };
+
+    const handleMouseUp = () => {
+      if (previewDates && previewDates.id === draggingNote.id) {
+         if (onUpdateDates) {
+           onUpdateDates(draggingNote.id, previewDates.start.toISOString(), previewDates.end.toISOString());
+         }
+      }
+      setDraggingNote(null);
+      setDragType(null);
+      setPreviewDates(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [draggingNote, dragType, previewDates, onUpdateDates]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 70px)', padding: '16px', background: 'var(--bg-main)' }}>
@@ -67,26 +149,26 @@ export default function GanttView({ notes, onSelectNote }) {
           <h3 style={{ fontSize: '1.05rem', fontWeight: 600, margin: 0 }}>Proje Zaman Çizelgesi (Gantt Chart)</h3>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)', padding: '4px 10px', borderRadius: '6px' }}>
-          <AlertCircle size={14} />
-          <span>Gantt çubukları mevcut şemada tarihler olmadığı için görsel simülasyondur.</span>
+          <Info size={14} />
+          <span>Gantt çubuklarının sağ veya sol kenarlarından tutarak uzatıp kısaltabilirsiniz.</span>
         </div>
       </div>
 
       {/* Gantt Tablosu Ana Kapsayıcı */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', border: '1px solid var(--border-main)', borderRadius: '12px', overflow: 'hidden', background: 'var(--bg-card)' }}>
         
-        {/* Tablo Header (Sol Görevler Başlığı + Sağ Tarihler) */}
+        {/* Tablo Header */}
         <div style={{ display: 'flex', height: '46px', borderBottom: '1px solid var(--border-main)', background: 'rgba(0,0,0,0.2)' }}>
-          {/* Sol Sabit Başlık */}
           <div style={{ width: '280px', flexShrink: 0, borderRight: '1px solid var(--border-main)', display: 'flex', alignItems: 'center', padding: '0 16px', fontWeight: 600, fontSize: '0.85rem' }}>
             Görev Adı
           </div>
           
-          {/* Sağ Yatay Kaydırılabilir Tarih Header'ı */}
           <div ref={headerScrollRef} style={{ flex: 1, overflowX: 'hidden', display: 'flex' }}>
             <div style={{ display: 'flex', width: `${days.length * COL_WIDTH}px` }}>
               {days.map((d, i) => {
-                const isToday = i === todayIndex;
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const isToday = d.getTime() === today.getTime();
                 const isWeekend = [0, 6].includes(d.getDay());
                 return (
                   <div key={i} style={{ 
@@ -108,7 +190,7 @@ export default function GanttView({ notes, onSelectNote }) {
           </div>
         </div>
 
-        {/* Tablo Gövdesi (Sol Görev Listesi + Sağ Grid/Çubuklar) */}
+        {/* Tablo Gövdesi */}
         <div style={{ flex: 1, display: 'flex', overflowY: 'auto' }}>
           
           {/* Sol Sabit Görev Listesi */}
@@ -160,64 +242,90 @@ export default function GanttView({ notes, onSelectNote }) {
                 ))}
               </div>
 
-              {/* Bugün İşaretçisi (Dikey Çizgi) */}
-              <div style={{ 
-                position: 'absolute', 
-                top: 0, 
-                bottom: 0, 
-                left: `${todayIndex * COL_WIDTH + (COL_WIDTH / 2)}px`, 
-                width: '2px', 
-                background: 'rgba(56, 189, 248, 0.4)', 
-                zIndex: 5, 
-                pointerEvents: 'none' 
-              }} />
+              {/* Bugün İşaretçisi */}
+              {(() => {
+                const today = new Date();
+                today.setHours(0,0,0,0);
+                const offsetDays = Math.floor((today.getTime() - timelineStart.getTime()) / (1000 * 60 * 60 * 24));
+                if (offsetDays >= 0 && offsetDays < days.length) {
+                  return (
+                    <div style={{ 
+                      position: 'absolute', 
+                      top: 0, 
+                      bottom: 0, 
+                      left: `${offsetDays * COL_WIDTH + (COL_WIDTH / 2)}px`, 
+                      width: '2px', 
+                      background: 'rgba(56, 189, 248, 0.4)', 
+                      zIndex: 5, 
+                      pointerEvents: 'none' 
+                    }} />
+                  );
+                }
+                return null;
+              })()}
               
               {/* Görev Satırları ve Çubukları */}
               {notes.map(note => {
-                // Her görev için stabil ama rastgele görünen simüle edilmiş başlangıç ve süre
-                const hash = hashString(note.id);
-                // 35 günlük timeline. Rastgele başlama (0-15. günler arası)
-                const startOffset = hash % 15; 
-                // Süre (3 - 10 gün arası)
-                const duration = (hash % 8) + 3; 
+                const isDraggingThis = previewDates && previewDates.id === note.id;
+                
+                const currentStart = isDraggingThis ? previewDates.start : getNoteDates(note).start;
+                const currentEnd = isDraggingThis ? previewDates.end : getNoteDates(note).end;
+                
+                const startOffsetDays = Math.floor((currentStart.getTime() - timelineStart.getTime()) / (1000 * 60 * 60 * 24));
+                const durationDays = Math.max(1, Math.floor((currentEnd.getTime() - currentStart.getTime()) / (1000 * 60 * 60 * 24)) + 1);
 
-                const left = startOffset * COL_WIDTH;
-                const width = duration * COL_WIDTH;
+                const left = startOffsetDays * COL_WIDTH;
+                const width = durationDays * COL_WIDTH;
                 const colors = getStatusColors(note.status);
 
                 return (
-                  <div key={note.id} style={{ height: '48px', borderBottom: '1px solid var(--border-main)', position: 'relative', zIndex: 2 }}>
+                  <div key={note.id} style={{ height: '48px', borderBottom: '1px solid var(--border-main)', position: 'relative', zIndex: isDraggingThis ? 10 : 2 }}>
                     
                     {/* Gantt Çubuğu */}
                     <div 
-                      onClick={() => onSelectNote(note)}
+                      onClick={(e) => {
+                        // Eğer sürükleme olmadıysa (sadece tıklama) detay panelini aç
+                        if (!draggingNote) onSelectNote(note);
+                      }}
                       style={{ 
                         position: 'absolute', 
                         top: '8px', 
                         left: `${left + 4}px`, 
-                        width: `${width - 8}px`, 
+                        width: `${Math.max(COL_WIDTH - 8, width - 8)}px`, 
                         height: '32px', 
                         background: colors.bg,
                         border: `1px solid ${colors.border}`,
                         borderRadius: '6px',
                         display: 'flex',
                         alignItems: 'center',
-                        padding: '0 8px',
+                        justifyContent: 'space-between',
                         fontSize: '0.75rem',
                         fontWeight: 600,
                         color: colors.text,
                         cursor: 'pointer',
-                        boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        transition: 'transform 0.1s',
+                        boxShadow: isDraggingThis ? '0 8px 20px rgba(0,0,0,0.3)' : '0 2px 5px rgba(0,0,0,0.1)',
+                        transition: isDraggingThis ? 'none' : 'transform 0.1s, left 0.2s, width 0.2s',
+                        opacity: isDraggingThis ? 0.9 : 1
                       }}
-                      title={`${note.title} (${duration} gün)`}
-                      onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
-                      onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                      title={`${note.title} (${durationDays} gün)\nBaşlangıç: ${currentStart.toLocaleDateString('tr-TR')}\nBitiş: ${currentEnd.toLocaleDateString('tr-TR')}`}
+                      onMouseEnter={(e) => !draggingNote && (e.currentTarget.style.transform = 'scale(1.02)')}
+                      onMouseLeave={(e) => !draggingNote && (e.currentTarget.style.transform = 'scale(1)')}
                     >
-                      {note.title}
+                      {/* Left Resize Handle */}
+                      <div 
+                        onMouseDown={(e) => handleEdgeMouseDown(e, note, 'start')}
+                        style={{ width: '8px', height: '100%', cursor: 'ew-resize', flexShrink: 0, opacity: 0.5, background: 'rgba(255,255,255,0.2)' }}
+                      />
+
+                      <div style={{ padding: '0 8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, pointerEvents: 'none' }}>
+                        {note.title}
+                      </div>
+
+                      {/* Right Resize Handle */}
+                      <div 
+                        onMouseDown={(e) => handleEdgeMouseDown(e, note, 'end')}
+                        style={{ width: '8px', height: '100%', cursor: 'ew-resize', flexShrink: 0, opacity: 0.5, background: 'rgba(255,255,255,0.2)' }}
+                      />
                     </div>
                   </div>
                 );
