@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, screen } = require('electron');
 const path = require('path');
 const { autoUpdater } = require('electron-updater');
 const log = require('electron-log');
@@ -7,38 +7,116 @@ const log = require('electron-log');
 autoUpdater.logger = log;
 autoUpdater.logger.transports.file.level = 'info';
 
+let mainWindow = null;
+let petWindow = null;
 
 function createWindow() {
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     title: 'MyNotes',
     width: 1200,
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    icon: path.join(__dirname, 'icon.png'), // Will add icon later if needed
+    icon: path.join(__dirname, 'icon.png'),
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
     }
   });
 
-  // Hide menu bar for a clean Notion-like app feel
-  win.setMenuBarVisibility(false);
+  mainWindow.setMenuBarVisibility(false);
 
-  // In production, load the built index.html
-  // In development, you can load http://localhost:5173
   const isDev = !app.isPackaged;
   if (isDev) {
-    win.loadURL('http://127.0.0.1:5173');
+    mainWindow.loadURL('http://127.0.0.1:5173');
   } else {
-    win.loadFile(path.join(__dirname, '../dist/index.html'));
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+  }
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+}
+
+function createPetWindow() {
+  if (petWindow && !petWindow.isDestroyed()) {
+    petWindow.show();
+    petWindow.focus();
+    return;
+  }
+
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
+
+  petWindow = new BrowserWindow({
+    title: 'Toph Desktop Pet',
+    width: 250,
+    height: 260,
+    x: screenW - 270,
+    y: screenH - 280,
+    transparent: true,
+    frame: false,
+    alwaysOnTop: true,
+    resizable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    }
+  });
+
+  // Keep window always on top of all applications (Chrome, VSCode, games, etc.)
+  petWindow.setAlwaysOnTop(true, 'screen-saver');
+  petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  const isDev = !app.isPackaged;
+  if (isDev) {
+    petWindow.loadURL('http://127.0.0.1:5173/?mode=pet');
+  } else {
+    petWindow.loadFile(path.join(__dirname, '../dist/index.html'), { query: { mode: 'pet' } });
+  }
+
+  petWindow.on('closed', () => {
+    petWindow = null;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('desktop-pet-status', false);
+    }
+  });
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('desktop-pet-status', true);
   }
 }
+
+// IPC Handlers for Always-on-top Desktop Pet
+ipcMain.on('open-desktop-pet', () => {
+  createPetWindow();
+});
+
+ipcMain.on('close-desktop-pet', () => {
+  if (petWindow && !petWindow.isDestroyed()) {
+    petWindow.close();
+    petWindow = null;
+  }
+});
+
+ipcMain.on('move-pet-window', (event, { deltaX, deltaY }) => {
+  if (petWindow && !petWindow.isDestroyed()) {
+    const [x, y] = petWindow.getPosition();
+    petWindow.setPosition(Math.round(x + deltaX), Math.round(y + deltaY));
+  }
+});
+
+ipcMain.on('resize-pet-window', (event, { width, height }) => {
+  if (petWindow && !petWindow.isDestroyed()) {
+    petWindow.setSize(Math.round(width), Math.round(height));
+  }
+});
 
 app.whenReady().then(() => {
   createWindow();
 
-  // Check for updates shortly after startup
   setTimeout(() => {
     autoUpdater.checkForUpdatesAndNotify();
   }, 2000);

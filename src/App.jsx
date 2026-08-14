@@ -7,6 +7,7 @@ import TrashView from './components/TrashView';
 import NoteDetailDrawer from './components/NoteDetailDrawer';
 import AuthModal from './components/AuthModal';
 import MembersModal from './components/MembersModal';
+import PetCompanion from './components/PetCompanion';
 import { supabase } from './services/supabaseClient';
 import { 
   fetchWorkspaces, 
@@ -188,6 +189,9 @@ export default function App() {
     }
     if (newStatus === 'Tamamlandı') {
       updatedNote.endDate = new Date().toISOString();
+      window.dispatchEvent(new CustomEvent('app_toast_notify', { 
+        detail: { message: 'Görev başarıyla tamamlandı!' } 
+      }));
     }
 
     const result = await saveNote(updatedNote);
@@ -513,6 +517,9 @@ export default function App() {
           <span>{toastMessage}</span>
         </div>
       )}
+
+      {/* Toph Animated Pet Companion */}
+      <PetCompanion />
     </div>
   );
 }
