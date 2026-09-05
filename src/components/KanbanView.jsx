@@ -1,5 +1,6 @@
 import React from 'react';
 import { Plus, MoreHorizontal, FileText, CheckCircle2 } from 'lucide-react';
+import NoteHoverPreview from './NoteHoverPreview';
 
 const COLUMNS = [
   { id: 'Yapılacaklar', label: 'Yapılacaklar', color: '#9ca3af' },
@@ -29,23 +30,25 @@ export default function KanbanView({ notes, onSelectNote, onUpdateStatus, onNewN
 
             <div className="kanban-cards">
               {colNotes.map(note => (
-                <div key={note.id} className="kanban-card" onClick={() => onSelectNote(note)}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '8px' }}>
-                    <FileText size={15} style={{ color: 'var(--text-muted)', marginTop: '2px' }} />
-                    <div style={{ fontWeight: 500, fontSize: '0.9rem', color: 'var(--text-main)', lineHeight: '1.3' }}>
-                      {note.title}
+                <NoteHoverPreview key={note.id} note={note}>
+                  <div className="kanban-card" onClick={() => onSelectNote(note)}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '8px' }}>
+                      <FileText size={15} style={{ color: 'var(--text-muted)', marginTop: '2px' }} />
+                      <div style={{ fontWeight: 500, fontSize: '0.9rem', color: 'var(--text-main)', lineHeight: '1.3' }}>
+                        {note.title}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px', fontSize: '0.78rem' }}>
+                      <span style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '2px 6px', borderRadius: '4px', color: 'var(--text-secondary)' }}>
+                        {note.category || 'Görev'}
+                      </span>
+                      <span style={{ color: 'var(--text-muted)' }}>
+                        {note.assignee || 'Atanmadı'}
+                      </span>
                     </div>
                   </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px', fontSize: '0.78rem' }}>
-                    <span style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '2px 6px', borderRadius: '4px', color: 'var(--text-secondary)' }}>
-                      {note.category || 'Görev'}
-                    </span>
-                    <span style={{ color: 'var(--text-muted)' }}>
-                      {note.assignee || 'Atanmadı'}
-                    </span>
-                  </div>
-                </div>
+                </NoteHoverPreview>
               ))}
 
               {colNotes.length === 0 && (

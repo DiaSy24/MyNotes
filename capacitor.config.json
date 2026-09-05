@@ -1,0 +1,6 @@
+{
+  "appId": "com.mynotes.app",
+  "appName": "MyNotes",
+  "webDir": "dist",
+  "backgroundColor": "#191919"
+}

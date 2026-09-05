@@ -146,6 +146,7 @@ export default function PetCompanion({ isDesktopWindow = false }) {
   const lastFrameTimeRef = useRef(0);
   const speechTimeoutRef = useRef(null);
   const dragStartRef = useRef({ x: 0, y: 0, startPosX: 0, startPosY: 0, lastScreenX: 0, lastScreenY: 0 });
+  const dragMovedRef = useRef(false);
   const containerRef = useRef(null);
 
   // Helper for Electron IPC
@@ -393,6 +394,22 @@ export default function PetCompanion({ isDesktopWindow = false }) {
     return () => window.removeEventListener('app_toast_notify', handleAppEvent);
   }, [selectedAnimMode, triggerSpeech, playSoundEffect]);
 
+  // External Toggle Event Listeners (e.g. from Sidebar)
+  useEffect(() => {
+    const handleToggle = () => {
+      setIsVisible(prev => !prev);
+    };
+    const handleShow = () => {
+      setIsVisible(true);
+    };
+    window.addEventListener('toggle_toph_pet', handleToggle);
+    window.addEventListener('show_toph_pet', handleShow);
+    return () => {
+      window.removeEventListener('toggle_toph_pet', handleToggle);
+      window.removeEventListener('show_toph_pet', handleShow);
+    };
+  }, []);
+
   // Initial greeting speech
   useEffect(() => {
     if (isVisible && showSpeech) {
@@ -420,7 +437,7 @@ export default function PetCompanion({ isDesktopWindow = false }) {
   // Click / Poke interaction
   const handlePoke = (e) => {
     e.stopPropagation();
-    if (isDragging) return;
+    if (isDragging || dragMovedRef.current) return;
 
     playSoundEffect('poke');
 
@@ -451,67 +468,154 @@ export default function PetCompanion({ isDesktopWindow = false }) {
     }, 3500);
   };
 
-  // Drag handlers (supports in-app translate & full Windows screen desktop dragging)
+  // --- Desktop overlay click-through -------------------------------------
+  // The overlay window is bigger than the pet sprite, so it must ignore
+  // mouse events over its empty transparent area but not over the pet.
+  // Rather than toggling this from mouseenter/mouseleave (which gets stuck
+  // "interactive" whenever the hovered element — a speech bubble or the
+  // settings menu — unmounts out from under the cursor, since no
+  // mouseleave fires for that), we recompute it from scratch on every
+  // forwarded mousemove by checking what's actually under the cursor. This
+  // can never get permanently stuck.
+  const ignoreMouseRef = useRef(true);
+  const isDraggingRef = useRef(false);
+  const isMenuOpenRef = useRef(false);
+
+  useEffect(() => { isMenuOpenRef.current = isMenuOpen; }, [isMenuOpen]);
+
+  useEffect(() => {
+    if (!isDesktopWindow) return;
+    const electron = getElectron();
+    if (!electron || !electron.ipcRenderer) return;
+
+    const setIgnore = (ignore) => {
+      if (ignoreMouseRef.current === ignore) return;
+      ignoreMouseRef.current = ignore;
+      electron.ipcRenderer.send('set-pet-ignore-mouse-events', ignore, { forward: true });
+    };
+
+    const handleMove = (e) => {
+      if (isDraggingRef.current || isMenuOpenRef.current) {
+        setIgnore(false);
+        return;
+      }
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const overPet = !!(el && el.closest && el.closest('.pet-companion-container'));
+      setIgnore(!overPet);
+    };
+
+    window.addEventListener('mousemove', handleMove);
+    return () => window.removeEventListener('mousemove', handleMove);
+  }, [isDesktopWindow]);
+
+  // Shrink/grow the transparent overlay window to fit its actual visible
+  // content (sprite + open speech bubble / settings menu), so the
+  // click-through dead zone around the pet stays small instead of being a
+  // fixed 320x380 rectangle regardless of what's shown.
+  useEffect(() => {
+    if (!isDesktopWindow) return;
+    const electron = getElectron();
+    if (!electron || !electron.ipcRenderer) return;
+
+    const measure = () => {
+      const container = containerRef.current;
+      if (!container) return;
+      const rects = [container.getBoundingClientRect()];
+      container.querySelectorAll('.pet-speech-bubble, .pet-controls-menu, .pet-action-bar').forEach((el) => {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) rects.push(r);
+      });
+      const top = Math.min(...rects.map((r) => r.top));
+      const left = Math.min(...rects.map((r) => r.left));
+      const bottom = Math.max(...rects.map((r) => r.bottom));
+      const right = Math.max(...rects.map((r) => r.right));
+
+      const margin = 24;
+      electron.ipcRenderer.send('resize-pet-window', {
+        width: Math.ceil(right - left) + margin * 2,
+        height: Math.ceil(bottom - top) + margin * 2
+      });
+    };
+
+    // Let the CSS transition (menu slide-in, speech bubble pop-in) settle first.
+    const timer = setTimeout(measure, 260);
+    return () => clearTimeout(timer);
+  }, [isDesktopWindow, isMenuOpen, currentDialogue, scale]);
+
+  // Drag handlers (supports in-app translate & drift-free Windows desktop dragging)
   const handleMouseDown = (e) => {
     if (e.target.closest('.pet-controls-menu') || e.target.closest('.pet-action-btn')) return;
-    
+
     setIsDragging(true);
+    isDraggingRef.current = true;
+    dragMovedRef.current = false;
     dragStartRef.current = {
       x: e.clientX,
       y: e.clientY,
       startPosX: position.x,
-      startPosY: position.y,
-      lastScreenX: e.screenX,
-      lastScreenY: e.screenY
+      startPosY: position.y
     };
 
-    // Panic animation while dragging
-    setCurrentState(ANIMATION_STATES[4]);
-    if (Math.random() < 0.6) {
-      const scream = DIALOGUES.dragging[Math.floor(Math.random() * DIALOGUES.dragging.length)];
-      triggerSpeech(scream, 2500);
+    const electron = getElectron();
+    if (isDesktopWindow && electron && electron.ipcRenderer) {
+      electron.ipcRenderer.send('pet-drag-start');
     }
 
     const onMouseMove = (moveEvent) => {
-      const electron = getElectron();
-      if (isDesktopWindow && electron && electron.ipcRenderer) {
-        // Move Electron transparent window across the whole Windows desktop
-        const deltaX = moveEvent.screenX - dragStartRef.current.lastScreenX;
-        const deltaY = moveEvent.screenY - dragStartRef.current.lastScreenY;
-        dragStartRef.current.lastScreenX = moveEvent.screenX;
-        dragStartRef.current.lastScreenY = moveEvent.screenY;
-        electron.ipcRenderer.send('move-pet-window', { deltaX, deltaY });
-      } else {
+      const dist = Math.hypot(moveEvent.clientX - dragStartRef.current.x, moveEvent.clientY - dragStartRef.current.y);
+      if (dist > 3 && !dragMovedRef.current) {
+        dragMovedRef.current = true;
+        // Panic animation while actually dragging
+        setCurrentState(ANIMATION_STATES[4]);
+        if (Math.random() < 0.5) {
+          const scream = DIALOGUES.dragging[Math.floor(Math.random() * DIALOGUES.dragging.length)];
+          triggerSpeech(scream, 2500);
+        }
+      }
+
+      if (!isDesktopWindow) {
         const dx = moveEvent.clientX - dragStartRef.current.x;
         const dy = moveEvent.clientY - dragStartRef.current.y;
-        
+
         const newX = Math.max(10, Math.min(window.innerWidth - 110, dragStartRef.current.startPosX + dx));
         const newY = Math.max(10, Math.min(window.innerHeight - 120, dragStartRef.current.startPosY + dy));
-        
+
         setPosition({ x: newX, y: newY });
       }
+      // In desktop-window mode the main process tracks the cursor on its
+      // own timer (started by 'pet-drag-start') — nothing to send here.
     };
 
     const onMouseUp = () => {
       setIsDragging(false);
+      isDraggingRef.current = false;
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('blur', onMouseUp);
 
-      // Landing stomp
-      setCurrentState(ANIMATION_STATES[1]);
-      playSoundEffect('stomp');
-      setTimeout(() => {
-        if (selectedAnimMode === 'random') {
-          setCurrentState(ANIMATION_STATES[6]);
-        } else {
-          const fixed = ANIMATION_STATES.find(s => s.id === selectedAnimMode);
-          if (fixed) setCurrentState(fixed);
-        }
-      }, 2000);
+      const electron = getElectron();
+      if (isDesktopWindow && electron && electron.ipcRenderer) {
+        electron.ipcRenderer.send('pet-drag-end');
+      }
+
+      if (dragMovedRef.current) {
+        // Landing stomp
+        setCurrentState(ANIMATION_STATES[1]);
+        playSoundEffect('stomp');
+        setTimeout(() => {
+          if (selectedAnimMode === 'random') {
+            setCurrentState(ANIMATION_STATES[6]);
+          } else {
+            const fixed = ANIMATION_STATES.find(s => s.id === selectedAnimMode);
+            if (fixed) setCurrentState(fixed);
+          }
+        }, 1800);
+      }
     };
 
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('blur', onMouseUp);
   };
 
   // Quick corner placement
@@ -601,7 +705,7 @@ export default function PetCompanion({ isDesktopWindow = false }) {
     <div 
       ref={containerRef}
       className={`pet-companion-container ${isDesktopWindow ? 'is-desktop-window' : ''} ${isDragging ? 'is-dragging' : ''}`}
-      style={{
+      style={isDesktopWindow ? {} : {
         transform: `translate(${position.x}px, ${position.y}px)`
       }}
       onMouseDown={handleMouseDown}

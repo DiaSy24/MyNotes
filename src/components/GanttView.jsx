@@ -140,8 +140,9 @@ export default function GanttView({ notes, onSelectNote, onUpdateDates }) {
   }, [draggingNote, dragType, previewDates, onUpdateDates]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 70px)', padding: '16px', background: 'var(--bg-main)' }}>
-      
+    <>
+    <div className="gantt-container" style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 70px)', padding: '16px', background: 'var(--bg-main)' }}>
+
       {/* Üst Başlık & Bilgi */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -336,5 +337,13 @@ export default function GanttView({ notes, onSelectNote, onUpdateDates }) {
         </div>
       </div>
     </div>
+
+    {/* Shown instead of the chart below 768px — a mouse-drag timeline doesn't fit a phone screen */}
+    <div className="gantt-mobile-notice" style={{ flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 'calc(100dvh - 70px)', padding: '24px', textAlign: 'center', color: 'var(--text-muted)', gap: '10px' }}>
+      <Calendar size={28} style={{ color: 'var(--text-muted)' }} />
+      <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>Gantt görünümü küçük ekranlarda kullanılamıyor</div>
+      <div style={{ fontSize: '0.85rem', maxWidth: '280px' }}>Zaman çizelgesini görüntülemek için lütfen tablet veya masaüstü kullanın.</div>
+    </div>
+    </>
   );
 }

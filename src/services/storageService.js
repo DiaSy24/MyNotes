@@ -15,9 +15,9 @@ export const fetchWorkspaces = async () => {
     
   if (error) {
     console.error('Error fetching workspaces:', error);
-    return [];
+    return null;
   }
-  
+
   return data.map(ws => {
     let icon = '📝';
     let color = ws.color;
@@ -119,6 +119,7 @@ export const fetchNotes = async () => {
     content: n.content,
     status: n.status,
     category: 'Genel', // Hardcoded for now or add to schema
+    order: n.order ?? 0,
     updatedAt: n.updated_at,
     createdAt: n.created_at,
     startDate: n.start_date,
@@ -156,6 +157,7 @@ export const fetchTrashNotes = async () => {
       content: n.content,
       status: n.status,
       category: 'Genel',
+      order: n.order ?? 0,
       updatedAt: n.updated_at,
       createdAt: n.created_at,
       is_trash: n.is_trash,
@@ -187,6 +189,21 @@ export const fetchTrashNotes = async () => {
   return trashItems.sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt));
 };
 
+const sanitizeTimestamp = (val) => {
+  if (!val) return null;
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (!trimmed) return null;
+    const d = new Date(trimmed);
+    if (isNaN(d.getTime())) return null;
+    return d.toISOString();
+  }
+  if (val instanceof Date) {
+    return isNaN(val.getTime()) ? null : val.toISOString();
+  }
+  return null;
+};
+
 export const saveNote = async (note) => {
   const userId = await getCurrentUserId();
   if (!userId) {
@@ -198,12 +215,14 @@ export const saveNote = async (note) => {
     id: note.id && !note.id.startsWith('note-') ? note.id : undefined, // Let Supabase handle UUID if it's a new fake ID
     user_id: userId,
     workspace_id: note.workspaceId,
-    title: note.title,
-    content: note.content,
-    status: note.status,
-    start_date: note.startDate,
-    end_date: note.endDate,
-    is_trash: note.is_trash || false
+    title: note.title || 'İsimsiz Not',
+    content: note.content || '',
+    status: note.status || 'Yapılacaklar',
+    order: typeof note.order === 'number' ? note.order : 0,
+    start_date: sanitizeTimestamp(note.startDate),
+    end_date: sanitizeTimestamp(note.endDate),
+    is_trash: note.is_trash || false,
+    updated_at: new Date().toISOString()
   };
 
   // If it's a completely new note with our old 'note-123' id format, we must not pass the id to Supabase 
@@ -407,10 +426,17 @@ export const updateWorkspaceOrders = async (updates) => {
 
 export const updateNoteOrders = async (updates) => {
   try {
-    const promises = updates.map(u => 
-      supabase.from('notes').update({ order: u.order }).eq('id', u.id)
+    const results = await Promise.all(
+      updates.map(u => supabase.from('notes').update({ order: u.order }).eq('id', u.id))
     );
-    await Promise.all(promises);
+    const failed = results.filter(r => r.error);
+    if (failed.length > 0) {
+      console.error('Error updating note orders:', failed.map(f => f.error));
+      window.dispatchEvent(new CustomEvent('app_toast_notify', {
+        detail: { message: 'Not sırası kaydedilemedi, tekrar deneyin.' }
+      }));
+      return false;
+    }
     return true;
   } catch (error) {
     console.error('Error updating note orders:', error);

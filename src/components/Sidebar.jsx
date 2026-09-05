@@ -38,7 +38,9 @@ export default function Sidebar({
   onAddWorkspace,
   onDeleteWorkspace,
   onReorderWorkspaces,
-  onManageMembers
+  onManageMembers,
+  mobileOpen,
+  onCloseMobile
 }) {
   const [editingWsId, setEditingWsId] = useState(null);
   const [editName, setEditName] = useState('');
@@ -46,11 +48,14 @@ export default function Sidebar({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isAddingNewWs, setIsAddingNewWs] = useState(false);
 
+  // On a touch screen a short drag distance fights normal page scrolling; require
+  // a brief hold instead so a scroll gesture isn't mistaken for a drag start.
+  const isTouchViewport = typeof window !== 'undefined' && window.innerWidth <= 768;
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 5, // 5px movement required before drag starts to allow clicking
-      },
+      activationConstraint: isTouchViewport
+        ? { delay: 200, tolerance: 8 }
+        : { distance: 5 }, // 5px movement required before drag starts to allow clicking
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
@@ -79,6 +84,13 @@ export default function Sidebar({
   const [isDragging, setIsDragging] = useState(false);
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0];
+
+  // On mobile the sidebar is a full-height drawer covering the content; hide it
+  // once the user has picked something so the selection is actually visible.
+  const selectCategory = (cat) => {
+    setActiveCategory(cat);
+    if (onCloseMobile) onCloseMobile();
+  };
 
   // Resizer Drag Listener
   useEffect(() => {
@@ -138,7 +150,7 @@ export default function Sidebar({
   };
 
   return (
-    <aside className="sidebar" style={{ width: `${sidebarWidth}px` }}>
+    <aside className={`sidebar${mobileOpen ? ' mobile-open' : ''}`} style={{ width: `${sidebarWidth}px` }}>
       {/* Drag Resizer Splitter Handle */}
       <div 
         className={`sidebar-resizer ${isDragging ? 'is-dragging' : ''}`} 
@@ -250,6 +262,7 @@ export default function Sidebar({
                 activeCategory={activeCategory}
                 setActiveWorkspaceId={setActiveWorkspaceId}
                 setActiveCategory={setActiveCategory}
+                onCloseMobile={onCloseMobile}
                 startEditingWs={startEditingWs}
                 saveWorkspaceEdit={saveWorkspaceEdit}
                 handleDeleteWs={handleDeleteWs}
@@ -271,9 +284,9 @@ export default function Sidebar({
       <div className="sidebar-section">
         <div className="sidebar-section-title">Görünümler & Süzgeçler</div>
         
-        <div 
+        <div
           className={`sidebar-item ${activeCategory === 'all' ? 'active' : ''}`}
-          onClick={() => setActiveCategory('all')}
+          onClick={() => selectCategory('all')}
         >
           <FolderKanban size={16} style={{ flexShrink: 0 }} />
           <div className="sidebar-item-name">
@@ -283,7 +296,7 @@ export default function Sidebar({
 
         <div 
           className={`sidebar-item ${activeCategory === 'Yapılacaklar' ? 'active' : ''}`}
-          onClick={() => setActiveCategory('Yapılacaklar')}
+          onClick={() => selectCategory('Yapılacaklar')}
         >
           <ListTodo size={16} style={{ color: 'var(--status-todo-dot)', flexShrink: 0 }} />
           <div className="sidebar-item-name">
@@ -293,7 +306,7 @@ export default function Sidebar({
 
         <div 
           className={`sidebar-item ${activeCategory === 'Devam Ediyor' ? 'active' : ''}`}
-          onClick={() => setActiveCategory('Devam Ediyor')}
+          onClick={() => selectCategory('Devam Ediyor')}
         >
           <Sparkles size={16} style={{ color: 'var(--status-progress-dot)', flexShrink: 0 }} />
           <div className="sidebar-item-name">
@@ -303,7 +316,7 @@ export default function Sidebar({
 
         <div 
           className={`sidebar-item ${activeCategory === 'İnceleniyor' ? 'active' : ''}`}
-          onClick={() => setActiveCategory('İnceleniyor')}
+          onClick={() => selectCategory('İnceleniyor')}
         >
           <Clock size={16} style={{ color: 'var(--status-review-dot)', flexShrink: 0 }} />
           <div className="sidebar-item-name">
@@ -313,7 +326,7 @@ export default function Sidebar({
 
         <div 
           className={`sidebar-item ${activeCategory === 'Tamamlandı' ? 'active' : ''}`}
-          onClick={() => setActiveCategory('Tamamlandı')}
+          onClick={() => selectCategory('Tamamlandı')}
         >
           <CheckCircle2 size={16} style={{ color: 'var(--status-done-dot)', flexShrink: 0 }} />
           <div className="sidebar-item-name">
@@ -324,7 +337,7 @@ export default function Sidebar({
         {/* Trash Bin Section */}
         <div 
           className={`sidebar-item ${activeCategory === 'trash' ? 'active' : ''}`}
-          onClick={() => setActiveCategory('trash')}
+          onClick={() => selectCategory('trash')}
           style={{ color: activeCategory === 'trash' ? '#f87171' : 'var(--text-secondary)' }}
         >
           <Trash2 size={16} style={{ color: '#ef4444', flexShrink: 0 }} />
@@ -339,8 +352,24 @@ export default function Sidebar({
         </div>
       </div>
 
-      {/* Footer Account & Sync */}
+      {/* Footer Account, Pet & Sync */}
       <div className="sidebar-footer">
+        <div 
+          className="pet-sidebar-toggle-card"
+          onClick={() => window.dispatchEvent(new CustomEvent('toggle_toph_pet'))}
+          title="Toph Companion Karakterini Aç / Kapat"
+        >
+          <span style={{ fontSize: '1rem', flexShrink: 0 }}>🥋</span>
+          <div style={{ flex: 1, overflow: 'hidden' }}>
+            <div style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              Toph Companion
+            </div>
+            <div style={{ color: '#4ade80', fontSize: '0.7rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              Pet'i Göster / Gizle
+            </div>
+          </div>
+        </div>
+
         <div className="sync-status-card" style={{ cursor: 'pointer' }} onClick={onOpenAuthModal}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, overflow: 'hidden' }}>
             {session ? (
@@ -373,6 +402,7 @@ function SortableWorkspaceItem({
   activeCategory,
   setActiveWorkspaceId,
   setActiveCategory,
+  onCloseMobile,
   startEditingWs,
   saveWorkspaceEdit,
   handleDeleteWs,
@@ -491,6 +521,7 @@ function SortableWorkspaceItem({
           onClick={() => {
             setActiveWorkspaceId(ws.id);
             if (activeCategory === 'trash') setActiveCategory('all');
+            if (onCloseMobile) onCloseMobile();
           }}
           style={{ width: '100%', overflow: 'hidden', paddingLeft: '4px' }}
         >

@@ -50,10 +50,10 @@ function createPetWindow() {
 
   petWindow = new BrowserWindow({
     title: 'Toph Desktop Pet',
-    width: 250,
-    height: 260,
-    x: screenW - 270,
-    y: screenH - 280,
+    width: 320,
+    height: 380,
+    x: screenW - 340,
+    y: screenH - 400,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
@@ -69,6 +69,9 @@ function createPetWindow() {
   // Keep window always on top of all applications (Chrome, VSCode, games, etc.)
   petWindow.setAlwaysOnTop(true, 'screen-saver');
   petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  // Enable click-through for transparent background areas by default
+  petWindow.setIgnoreMouseEvents(true, { forward: true });
 
   const isDev = !app.isPackaged;
   if (isDev) {
@@ -101,17 +104,71 @@ ipcMain.on('close-desktop-pet', () => {
   }
 });
 
-ipcMain.on('move-pet-window', (event, { deltaX, deltaY }) => {
+// Click-through mouse event toggling (transparent background vs interactive pet elements)
+ipcMain.on('set-pet-ignore-mouse-events', (event, ignore, options) => {
   if (petWindow && !petWindow.isDestroyed()) {
-    const [x, y] = petWindow.getPosition();
-    petWindow.setPosition(Math.round(x + deltaX), Math.round(y + deltaY));
+    petWindow.setIgnoreMouseEvents(ignore, options || { forward: true });
   }
 });
 
-ipcMain.on('resize-pet-window', (event, { width, height }) => {
-  if (petWindow && !petWindow.isDestroyed()) {
-    petWindow.setSize(Math.round(width), Math.round(height));
+// Rock-solid, zero-drift window dragging: the main process polls the cursor
+// on its own timer instead of relying on renderer-forwarded mousemove events
+// (those stop arriving once the window is tracking the cursor exactly,
+// since the pointer's position inside the window stops changing).
+let petDragInterval = null;
+let petDragOffset = { x: 0, y: 0 };
+
+ipcMain.on('pet-drag-start', () => {
+  if (!petWindow || petWindow.isDestroyed()) return;
+  if (petDragInterval) clearInterval(petDragInterval);
+
+  const cursor = screen.getCursorScreenPoint();
+  const [winX, winY] = petWindow.getPosition();
+  petDragOffset = { x: cursor.x - winX, y: cursor.y - winY };
+
+  petDragInterval = setInterval(() => {
+    if (!petWindow || petWindow.isDestroyed()) {
+      clearInterval(petDragInterval);
+      petDragInterval = null;
+      return;
+    }
+    const point = screen.getCursorScreenPoint();
+    const display = screen.getDisplayNearestPoint(point);
+    const { x: areaX, y: areaY, width: areaW, height: areaH } = display.workArea;
+    const [winW, winH] = petWindow.getSize();
+
+    const targetX = point.x - petDragOffset.x;
+    const targetY = point.y - petDragOffset.y;
+
+    const clampedX = Math.round(Math.max(areaX, Math.min(targetX, areaX + areaW - winW)));
+    const clampedY = Math.round(Math.max(areaY, Math.min(targetY, areaY + areaH - winH)));
+
+    petWindow.setPosition(clampedX, clampedY);
+  }, 16);
+});
+
+ipcMain.on('pet-drag-end', () => {
+  if (petDragInterval) {
+    clearInterval(petDragInterval);
+    petDragInterval = null;
   }
+});
+
+// Resizes the overlay window to fit its content (sprite + speech bubble /
+// settings menu), keeping the bottom-center anchor point fixed so the
+// sprite doesn't visually jump when the window grows/shrinks.
+ipcMain.on('resize-pet-window', (event, { width, height }) => {
+  if (!petWindow || petWindow.isDestroyed()) return;
+
+  const [curX, curY] = petWindow.getPosition();
+  const [curW, curH] = petWindow.getSize();
+  const newW = Math.round(width);
+  const newH = Math.round(height);
+
+  const newX = Math.round(curX + (curW - newW) / 2);
+  const newY = Math.round(curY + (curH - newH));
+
+  petWindow.setBounds({ x: newX, y: newY, width: newW, height: newH });
 });
 
 app.whenReady().then(() => {

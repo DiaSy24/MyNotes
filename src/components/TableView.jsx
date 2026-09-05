@@ -8,11 +8,13 @@ import {
   FileText,
   Search,
   Calendar,
-  GripVertical
+  GripVertical,
+  ListOrdered
 } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import NoteHoverPreview from './NoteHoverPreview';
 
 const STATUS_OPTIONS = [
   { id: 'Yapılacaklar', label: 'Yapılacaklar', colorClass: 'status-To-Do' },
@@ -113,11 +115,14 @@ export default function TableView({
     });
   };
 
+  // On a touch screen a short drag distance fights normal page scrolling; require
+  // a brief hold instead so a scroll gesture isn't mistaken for a drag start.
+  const isTouchViewport = typeof window !== 'undefined' && window.innerWidth <= 768;
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 5,
-      },
+      activationConstraint: isTouchViewport
+        ? { delay: 200, tolerance: 8 }
+        : { distance: 5 },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
@@ -246,6 +251,16 @@ export default function TableView({
               }}
             />
           </div>
+          {sortField !== 'order' && (
+            <button
+              className="icon-btn"
+              onClick={() => { setSortField('order'); setSortDirection('asc'); }}
+              title="Manuel Sıraya Dön (Sürükle-Bırak için gerekli)"
+              style={{ color: '#2eaadc' }}
+            >
+              <ListOrdered size={16} />
+            </button>
+          )}
           <button className="icon-btn" onClick={() => handleSortToggle('title')} title="İsme Göre Sırala">
             <ArrowUpDown size={16} />
           </button>
@@ -370,6 +385,7 @@ export default function TableView({
                   onUpdateStatus={onUpdateStatus}
                   onUpdateDates={onUpdateDates}
                   formatDate={formatDate}
+                  dragDisabled={sortField !== 'order'}
                 />
               );
             })}
@@ -413,7 +429,8 @@ function SortableNoteRow({
   STATUS_OPTIONS,
   onUpdateStatus,
   onUpdateDates,
-  formatDate
+  formatDate,
+  dragDisabled
 }) {
   const {
     attributes,
@@ -437,10 +454,16 @@ function SortableNoteRow({
       <td>
         <div className="project-title-cell" style={{ display: 'flex', alignItems: 'center' }}>
           {/* DRAG HANDLE */}
-          <div 
-            {...attributes} 
-            {...listeners} 
-            style={{ cursor: 'grab', padding: '4px 2px', marginRight: '6px', color: 'var(--text-muted)', flexShrink: 0 }}
+          <div
+            {...(dragDisabled ? {} : { ...attributes, ...listeners })}
+            title={dragDisabled ? 'Sürüklemek için önce Manuel Sıraya dönün' : undefined}
+            style={{
+              cursor: dragDisabled ? 'not-allowed' : 'grab',
+              padding: '4px 2px',
+              marginRight: '6px',
+              color: dragDisabled ? 'var(--border-main)' : 'var(--text-muted)',
+              flexShrink: 0
+            }}
           >
             <GripVertical size={14} />
           </div>
@@ -469,17 +492,18 @@ function SortableNoteRow({
               />
             </div>
           ) : (
-            <span 
-              onClick={() => onSelectNote(note)}
-              onDoubleClick={(e) => {
-                e.stopPropagation();
-                startEditingTitle(note);
-              }}
-              style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-              title="Tıklayın açın veya çift tıklayarak düzenleyin"
-            >
-              {note.title}
-            </span>
+            <NoteHoverPreview note={note}>
+              <span
+                onClick={() => onSelectNote(note)}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  startEditingTitle(note);
+                }}
+                style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+              >
+                {note.title}
+              </span>
+            </NoteHoverPreview>
           )}
 
           <span className="open-drawer-hint" onClick={() => onSelectNote(note)}>
@@ -489,7 +513,7 @@ function SortableNoteRow({
       </td>
 
       {/* Status Column */}
-      <td style={{ position: 'relative' }}>
+      <td style={{ position: 'relative' }} data-label="Durum">
         <div 
           className={`status-pill ${STATUS_OPTIONS.find(opt => opt.id === note.status)?.colorClass || 'status-To-Do'}`}
           onClick={(e) => {
@@ -540,8 +564,8 @@ function SortableNoteRow({
       </td>
 
       {/* Category Column */}
-      <td>
-        <span style={{ 
+      <td data-label="Kategori">
+        <span style={{
           fontSize: '0.78rem', 
           background: 'rgba(255, 255, 255, 0.05)', 
           padding: '3px 8px', 
@@ -558,22 +582,22 @@ function SortableNoteRow({
       </td>
 
       {/* Assignee Column */}
-      <td>
+      <td data-label="Sorumlu">
         <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>
           {note.assignee || 'Atanmadı'}
         </div>
       </td>
 
       {/* Creation Date Column */}
-      <td>
+      <td data-label="Oluşturuldu">
         <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
           {formatDate(note.createdAt)}
         </span>
       </td>
 
       {/* End Date Column */}
-      <td>
-        <input 
+      <td data-label="Bitiş Tarihi">
+        <input
           type="date" 
           value={note.endDate ? note.endDate.split('T')[0] : ''}
           onChange={(e) => {
