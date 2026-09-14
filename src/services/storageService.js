@@ -118,7 +118,6 @@ export const fetchNotes = async () => {
     title: n.title,
     content: n.content,
     status: n.status,
-    category: 'Genel', // Hardcoded for now or add to schema
     order: n.order ?? 0,
     updatedAt: n.updated_at,
     createdAt: n.created_at,
@@ -156,7 +155,6 @@ export const fetchTrashNotes = async () => {
       title: n.title,
       content: n.content,
       status: n.status,
-      category: 'Genel',
       order: n.order ?? 0,
       updatedAt: n.updated_at,
       createdAt: n.created_at,

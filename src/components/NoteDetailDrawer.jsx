@@ -10,9 +10,29 @@ import {
   Save,
   Check,
   Palette,
-  GripVertical
+  GripVertical,
+  Calendar
 } from 'lucide-react';
 import { parseContent, serializeBlocks, createBlock } from '../utils/noteBlocks';
+
+const formatHeadingDate = (dStr) => {
+  if (!dStr) return '';
+  const d = new Date(dStr);
+  return isNaN(d.getTime()) ? '' : d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
+};
+
+const formatHeadingDateRange = (startStr, endStr) => {
+  if (!startStr && !endStr) return '';
+  if (startStr && !endStr) return formatHeadingDate(startStr);
+  if (!startStr && endStr) return formatHeadingDate(endStr);
+  const s = new Date(startStr);
+  const e = new Date(endStr);
+  if (isNaN(s.getTime()) || isNaN(e.getTime())) return '';
+  if (s.toDateString() === e.toDateString()) {
+    return formatHeadingDate(startStr);
+  }
+  return `${formatHeadingDate(startStr)} - ${formatHeadingDate(endStr)}`;
+};
 
 const COLOR_PALETTE = [
   { name: 'Kırmızı', value: '#ef4444' },
@@ -331,6 +351,16 @@ export default function NoteDetailDrawer({
                     onKeyDown={(e) => handleBlockKeyDown(e, block)}
                     onFocus={() => handleFocusBlock(block.id, index)}
                   />
+
+                  {block.type === 'heading' && (block.startDate || block.endDate) && (
+                    <div
+                      className="heading-date-badge"
+                      title={`Gantt Zaman Çizelgesi: ${formatHeadingDateRange(block.startDate, block.endDate)}`}
+                    >
+                      <Calendar size={12} style={{ opacity: 0.7 }} />
+                      <span>{formatHeadingDateRange(block.startDate, block.endDate)}</span>
+                    </div>
+                  )}
 
                   <div className="note-block-delete" title="Bloğu Sil" onClick={() => deleteBlock(block.id)}>
                     <X size={13} />

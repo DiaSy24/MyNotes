@@ -303,6 +303,18 @@ body {
   gap: 8px;
 }
 
+/* Mobile-only search trigger; the always-visible desktop input (.topbar-search)
+   makes this redundant above 768px. */
+.search-toggle-btn {
+  display: none;
+}
+
+.topbar-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
 .icon-btn {
   background: transparent;
   border: none;
@@ -467,6 +479,7 @@ body {
 .note-modal-card {
   width: min(1240px, 92vw);
   max-width: 95vw;
+  height: 88vh;
   max-height: 92vh;
   background: #1e1e1e;
   border: 1px solid var(--border-main);
@@ -525,23 +538,10 @@ body {
   font-weight: 500;
 }
 
-.note-content-editor {
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid var(--border-main);
-  border-radius: 8px;
-  padding: 16px;
-  min-height: 250px;
-  outline: none;
-  color: var(--text-main);
-  font-family: 'Inter', sans-serif;
-  font-size: 0.95rem;
-  line-height: 1.6;
-}
-
 /* Note Detail - Blocks Editor */
 .note-blocks-container {
   flex: 1;
-  min-height: 250px;
+  min-height: 420px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1382,12 +1382,43 @@ body.desktop-pet-window #root {
 
   .notion-topbar {
     padding: 12px 12px 8px 52px; /* leave room for the hamburger button */
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 8px;
+    position: relative;
   }
 
-  .topbar-actions input[type="text"] {
-    width: 100px !important;
+  /* Every topbar control collapses to icon-only on mobile; labels reappear
+     as the button/tab `title` on long-press, and the search input expands
+     into its own panel instead of always taking up bar space. */
+  .view-tab-label,
+  .btn-label {
+    display: none;
+  }
+
+  .view-tab-btn {
+    padding: 8px; /* keep a comfortable touch target once the label is gone */
+  }
+
+  .search-toggle-btn {
+    display: flex;
+  }
+
+  .topbar-search {
+    display: none;
+  }
+
+  .topbar-search.open {
+    display: flex;
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    top: 8px;
+    z-index: 5;
+    background: var(--bg-app);
+  }
+
+  .topbar-search.open input[type="text"] {
+    width: 100% !important;
   }
 
   /* Note detail modal: full-screen sheet instead of a centered card */
@@ -1400,10 +1431,13 @@ body.desktop-pet-window #root {
     border-radius: 0;
   }
 
-  /* Notion-style table -> single-column card list. `display:block` on every
-     table part turns each row into its own block; data-label attributes
-     (set in TableView.jsx) recreate the column headers via ::before so the
-     info isn't lost once <thead> is hidden. */
+  /* Notion-style table -> single-line row list. Every row shows only the
+     title and a bare status dot; Sorumlu / Oluşturma / Bitiş are desktop-only
+     detail already visible in the note itself. `display:flex` on the row
+     keeps title + status on one line instead of the desktop's per-cell block
+     layout, and the data-label `::before` headers (needed for the desktop
+     column-header replacement) are turned off since there's only one visible
+     label left worth keeping (the status dot needs none at all). */
   .table-view-container {
     padding: 0 10px 16px 10px;
   }
@@ -1423,28 +1457,76 @@ body.desktop-pet-window #root {
   }
 
   .notion-table tr {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 8px;
     border: 1px solid var(--border-main);
     border-radius: 8px;
-    margin-top: 10px;
-    padding: 8px 12px;
+    margin-top: 8px;
+    padding: 10px 12px;
     background: var(--bg-card);
   }
 
   .notion-table td {
-    display: block;
-    width: 100% !important;
     border: none;
-    padding: 6px 0;
+    padding: 0;
     white-space: normal;
   }
 
   .notion-table td[data-label]::before {
-    content: attr(data-label);
-    display: block;
-    font-size: 0.7rem;
-    color: var(--text-muted);
-    margin-bottom: 2px;
+    display: none;
+  }
+
+  /* Hide every column except title + status so each note fits one line. */
+  .notion-table td[data-label="Sorumlu"],
+  .notion-table td[data-label="Oluşturuldu"],
+  .notion-table td[data-label="Bitiş Tarihi"] {
+    display: none;
+  }
+
+  .notion-table td:first-child {
+    flex: 1;
+    min-width: 0;
+    width: auto !important;
+  }
+
+  .project-title-cell span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .notion-table td[data-label="Durum"] {
+    flex: 0 0 auto;
+    width: auto !important;
+  }
+
+  /* Status becomes a bare colored dot on mobile — no pill background/label.
+     Only the row's own (closed) pill is targeted via the `>` direct-child
+     combinator — it's a direct child of the Durum <td>, while the dropdown's
+     option pills sit one level deeper (inside the dropdown's own wrapper
+     div) and must keep their text labels or the picker becomes unusable. */
+  .notion-table td[data-label="Durum"] > .status-pill {
+    padding: 0;
+    border: none;
+    background: transparent !important;
+    gap: 0;
+  }
+
+  .notion-table td[data-label="Durum"] > .status-pill > span:not(.status-pill-dot) {
+    display: none;
+  }
+
+  .notion-table td[data-label="Durum"] > .status-pill .status-pill-dot {
+    width: 12px;
+    height: 12px;
+  }
+
+  /* Drag handle stays (mobile reordering still works) but shrinks to match
+     the now-compact row. */
+  .project-title-cell > div:first-child {
+    padding: 2px 0;
+    margin-right: 4px;
   }
 
   .col-resizer {
@@ -1479,10 +1561,128 @@ body.desktop-pet-window #root {
   .gantt-mobile-notice {
     display: flex;
   }
+
+  /* Toph is desktop-only (the "always on top" overlay has no mobile
+     equivalent, see electron/main.cjs); hide every entry point to it. */
+  .pet-sidebar-toggle-card,
+  .pet-summon-pill {
+    display: none !important;
+  }
 }
 
 .gantt-mobile-notice {
   display: none;
+}
+
+.heading-date-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-muted);
+  font-size: 0.73rem;
+  font-weight: 500;
+  opacity: 0.65;
+  white-space: nowrap;
+  user-select: none;
+  margin-top: 6px;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+  cursor: default;
+}
+
+.heading-date-badge:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-main);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+/* Gantt Chart Styles */
+.gantt-zoom-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-main);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.gantt-zoom-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-main);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.gantt-expand-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.gantt-expand-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-main);
+}
+
+.gantt-heading-bar {
+  position: absolute;
+  height: 24px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 0.1s;
+  background: linear-gradient(90deg, rgba(168, 85, 247, 0.2), rgba(139, 92, 246, 0.3));
+  border: 1px solid rgba(168, 85, 247, 0.45);
+  color: #e9d5ff;
+}
+
+.gantt-heading-bar:hover {
+  border-color: rgba(168, 85, 247, 0.7);
+  box-shadow: 0 3px 10px rgba(168, 85, 247, 0.2);
+}
+
+.gantt-ghost-bar {
+  position: absolute;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px dashed rgba(168, 85, 247, 0.4);
+  background: rgba(168, 85, 247, 0.06);
+  color: rgba(233, 213, 255, 0.65);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  font-size: 0.7rem;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
+.gantt-ghost-bar:hover {
+  background: rgba(168, 85, 247, 0.12);
+  border-color: rgba(168, 85, 247, 0.7);
+  color: #e9d5ff;
 }
 
 

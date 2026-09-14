@@ -14,6 +14,8 @@ const makeBlock = (overrides = {}) => ({
   text: '',
   checked: false,
   color: null,
+  startDate: null,
+  endDate: null,
   ...overrides
 });
 
@@ -33,10 +35,13 @@ export function parseContent(content) {
       const parsed = JSON.parse(trimmed);
       if (parsed && parsed.v === 1 && Array.isArray(parsed.blocks) && parsed.blocks.length > 0) {
         return parsed.blocks.map(b => makeBlock({
+          id: b.id || genId(),
           type: BLOCK_TYPES.includes(b.type) ? b.type : 'text',
           text: typeof b.text === 'string' ? b.text : '',
           checked: !!b.checked,
-          color: b.color || null
+          color: b.color || null,
+          startDate: b.startDate || null,
+          endDate: b.endDate || null
         }));
       }
     } catch {
@@ -48,9 +53,11 @@ export function parseContent(content) {
   const blocks = [];
   let inCodeBlock = false;
   let codeBuffer = [];
+  let lineCounter = 0;
 
   const flushCode = () => {
-    blocks.push(makeBlock({ type: 'code', text: codeBuffer.join('\n') }));
+    lineCounter++;
+    blocks.push(makeBlock({ id: `blk-c-${lineCounter}`, type: 'code', text: codeBuffer.join('\n') }));
     codeBuffer = [];
   };
 
@@ -72,21 +79,22 @@ export function parseContent(content) {
       continue;
     }
 
+    lineCounter++;
     const headingMatch = line.match(/^#{1,6}\s+(.*)$/);
     const todoMatch = line.match(/^[-*]\s+\[( |x|X)\]\s*(.*)$/);
     const quoteMatch = line.match(/^>\s?(.*)$/);
 
     if (headingMatch) {
-      blocks.push(makeBlock({ type: 'heading', text: headingMatch[1] }));
+      blocks.push(makeBlock({ id: `blk-h-${lineCounter}`, type: 'heading', text: headingMatch[1] }));
     } else if (todoMatch) {
-      blocks.push(makeBlock({ type: 'todo', text: todoMatch[2], checked: todoMatch[1].toLowerCase() === 'x' }));
+      blocks.push(makeBlock({ id: `blk-t-${lineCounter}`, type: 'todo', text: todoMatch[2], checked: todoMatch[1].toLowerCase() === 'x' }));
     } else if (quoteMatch) {
-      blocks.push(makeBlock({ type: 'quote', text: quoteMatch[1].replace(/^\*\*Önemli Not:\*\*\s*/, '') }));
+      blocks.push(makeBlock({ id: `blk-q-${lineCounter}`, type: 'quote', text: quoteMatch[1].replace(/^\*\*Önemli Not:\*\*\s*/, '') }));
     } else if (line.trim() === '') {
       // Skip blank separator lines rather than creating empty text blocks for each one.
       continue;
     } else {
-      blocks.push(makeBlock({ type: 'text', text: line }));
+      blocks.push(makeBlock({ id: `blk-txt-${lineCounter}`, type: 'text', text: line }));
     }
   }
 
@@ -104,7 +112,9 @@ export function serializeBlocks(blocks) {
     type: b.type,
     text: b.text,
     checked: !!b.checked,
-    color: b.color || null
+    color: b.color || null,
+    startDate: b.startDate || null,
+    endDate: b.endDate || null
   }));
   return JSON.stringify({ v: 1, blocks: clean });
 }

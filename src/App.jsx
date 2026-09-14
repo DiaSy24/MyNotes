@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import TableView from './components/TableView';
+import ViewTabs from './components/ViewTabs';
 import KanbanView from './components/KanbanView';
 import GanttView from './components/GanttView';
 import TrashView from './components/TrashView';
@@ -25,6 +26,7 @@ import {
   getWorkspaceMembers
 } from './services/storageService';
 import { CheckCircle, Loader2, Menu } from 'lucide-react';
+import { parseContent, serializeBlocks } from './utils/noteBlocks';
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -210,10 +212,9 @@ export default function App() {
     
     let updatedNote = { ...noteToUpdate, status: newStatus };
 
-    // Otomatik tarih atama mantığı
-    if (newStatus === 'Devam Ediyor' && !updatedNote.startDate) {
-      updatedNote.startDate = new Date().toISOString();
-    }
+    // Otomatik tarih atama mantığı:
+    // Başlangıç tarihi ASLA otomatik değişmez (not oluşturulma tarihi veya manuel seçilen tarih kalır).
+    // Bitiş tarihi ise yalnızca "Tamamlandı" durumuna geçerse otomatik ayarlanır.
     if (newStatus === 'Tamamlandı') {
       updatedNote.endDate = new Date().toISOString();
       window.dispatchEvent(new CustomEvent('app_toast_notify', { 
@@ -243,6 +244,35 @@ export default function App() {
        if (selectedNote && selectedNote.id === noteId) {
          setSelectedNote({ ...updatedNote, updatedAt: result.updated_at });
        }
+    }
+  };
+
+  const handleUpdateHeadingDates = async (noteId, headingBlockId, newStartDate, newEndDate) => {
+    const noteToUpdate = notes.find(n => n.id === noteId);
+    if (!noteToUpdate) return;
+
+    const blocks = parseContent(noteToUpdate.content);
+    const updatedBlocks = blocks.map(b => {
+      if (b.id === headingBlockId) {
+        return {
+          ...b,
+          startDate: newStartDate,
+          endDate: newEndDate
+        };
+      }
+      return b;
+    });
+
+    const newContent = serializeBlocks(updatedBlocks);
+    const updatedNote = { ...noteToUpdate, content: newContent };
+    const result = await saveNote(updatedNote);
+
+    if (result) {
+      const dbSaved = { ...updatedNote, updatedAt: result.updated_at };
+      setNotes(notes.map(n => n.id === noteId ? dbSaved : n));
+      if (selectedNote && selectedNote.id === noteId) {
+        setSelectedNote(dbSaved);
+      }
     }
   };
 
@@ -307,7 +337,6 @@ export default function App() {
       status: 'Yapılacaklar',
       priority: 'Medium',
       assignee: defaultMember,
-      category: 'Genel',
       order: maxOrder + 1,
       updatedAt: new Date().toISOString(),
       content: '### Not Detayları\n- [ ] Yapılacak görevi yazın'
@@ -478,19 +507,9 @@ export default function App() {
             {activeView === 'by-status' && (
               <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                 <div className="notion-topbar">
-                  <div className="notion-views-tab">
-                    <button className="view-tab-btn active" onClick={() => setActiveView('by-status')}>
-                      <span>➔ Duruma Göre</span>
-                    </button>
-                    <button className="view-tab-btn" onClick={() => setActiveView('all-projects')}>
-                      <span>★ Tüm Projeler</span>
-                    </button>
-                    <button className="view-tab-btn" onClick={() => setActiveView('gantt')}>
-                      <span>📊 Gantt</span>
-                    </button>
-                  </div>
+                  <ViewTabs activeView={activeView} setActiveView={setActiveView} />
                 </div>
-                <KanbanView 
+                <KanbanView
                   notes={displayedNotes}
                   onSelectNote={setSelectedNote}
                   onUpdateStatus={handleUpdateStatus}
@@ -502,22 +521,13 @@ export default function App() {
             {activeView === 'gantt' && (
               <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                 <div className="notion-topbar">
-                  <div className="notion-views-tab">
-                    <button className="view-tab-btn" onClick={() => setActiveView('by-status')}>
-                      <span>➔ Duruma Göre</span>
-                    </button>
-                    <button className="view-tab-btn" onClick={() => setActiveView('all-projects')}>
-                      <span>★ Tüm Projeler</span>
-                    </button>
-                    <button className="view-tab-btn active" onClick={() => setActiveView('gantt')}>
-                      <span>📊 Gantt</span>
-                    </button>
-                  </div>
+                  <ViewTabs activeView={activeView} setActiveView={setActiveView} />
                 </div>
-                <GanttView 
+                <GanttView
                   notes={displayedNotes}
                   onSelectNote={setSelectedNote}
                   onUpdateDates={handleUpdateDates}
+                  onUpdateHeadingDates={handleUpdateHeadingDates}
                 />
               </div>
             )}

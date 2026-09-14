@@ -39,10 +39,7 @@ export default function KanbanView({ notes, onSelectNote, onUpdateStatus, onNewN
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px', fontSize: '0.78rem' }}>
-                      <span style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '2px 6px', borderRadius: '4px', color: 'var(--text-secondary)' }}>
-                        {note.category || 'Görev'}
-                      </span>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginTop: '12px', fontSize: '0.78rem' }}>
                       <span style={{ color: 'var(--text-muted)' }}>
                         {note.assignee || 'Atanmadı'}
                       </span>

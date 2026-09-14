@@ -45,15 +45,29 @@ function createPetWindow() {
     return;
   }
 
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
+  // Anchor to whichever display the main window is actually on (not always
+  // the primary one — e.g. the main window was last used on an external
+  // monitor). Using workArea's x/y (not just width/height) matters too:
+  // a non-primary display can have a negative or offset origin, and
+  // ignoring it is exactly what put the pet off-screen after switching
+  // back to the laptop's own display.
+  const targetDisplay = mainWindow && !mainWindow.isDestroyed()
+    ? screen.getDisplayMatching(mainWindow.getBounds())
+    : screen.getPrimaryDisplay();
+  const { x: areaX, y: areaY, width: areaW, height: areaH } = targetDisplay.workArea;
+
+  const petW = 320;
+  const petH = 380;
+  const margin = 20;
+  const petX = Math.round(Math.max(areaX, areaX + areaW - petW - margin));
+  const petY = Math.round(Math.max(areaY, areaY + areaH - petH - margin));
 
   petWindow = new BrowserWindow({
     title: 'Toph Desktop Pet',
-    width: 320,
-    height: 380,
-    x: screenW - 340,
-    y: screenH - 400,
+    width: petW,
+    height: petH,
+    x: petX,
+    y: petY,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
@@ -165,8 +179,15 @@ ipcMain.on('resize-pet-window', (event, { width, height }) => {
   const newW = Math.round(width);
   const newH = Math.round(height);
 
-  const newX = Math.round(curX + (curW - newW) / 2);
-  const newY = Math.round(curY + (curH - newH));
+  let newX = Math.round(curX + (curW - newW) / 2);
+  let newY = Math.round(curY + (curH - newH));
+
+  // Clamp to whichever display the window is currently on so it can't grow
+  // itself partly or fully off-screen (e.g. anchored near a screen edge).
+  const display = screen.getDisplayNearestPoint({ x: newX, y: newY });
+  const { x: areaX, y: areaY, width: areaW, height: areaH } = display.workArea;
+  newX = Math.round(Math.max(areaX, Math.min(newX, areaX + areaW - newW)));
+  newY = Math.round(Math.max(areaY, Math.min(newY, areaY + areaH - newH)));
 
   petWindow.setBounds({ x: newX, y: newY, width: newW, height: newH });
 });

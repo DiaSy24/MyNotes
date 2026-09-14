@@ -55,7 +55,7 @@ export default function TrashView({
               <tr>
                 <th style={{ width: '45%' }}>Silinen Öğe</th>
                 <th style={{ width: '20%' }}>Silinme Tarihi</th>
-                <th style={{ width: '15%' }}>Kategori</th>
+                <th style={{ width: '15%' }}>Tür</th>
                 <th style={{ width: '20%', textAlign: 'right' }}>İşlemler</th>
               </tr>
             </thead>
@@ -71,7 +71,7 @@ export default function TrashView({
                   </td>
                   <td>
                     <span style={{ fontSize: '0.78rem', background: 'rgba(255, 255, 255, 0.05)', padding: '2px 6px', borderRadius: '4px', color: 'var(--text-secondary)' }}>
-                      {note.type === 'workspace' ? 'Kategori / Alan' : (note.category || 'Genel')}
+                      {note.type === 'workspace' ? 'Çalışma Alanı' : 'Not'}
                     </span>
                   </td>
                   <td style={{ textAlign: 'right' }}>

@@ -6,11 +6,16 @@ const OPEN_DELAY = 400;
 const CLOSE_DELAY = 120;
 const PREVIEW_WIDTH = 320;
 const PREVIEW_EST_HEIGHT = 180;
+const CURSOR_OFFSET_X = 16;
+const CURSOR_OFFSET_Y = 18;
 
 /**
  * Wraps a trigger element (e.g. a note title) and, after a short hover delay,
- * shows a floating preview of the note's content in a portal so it isn't
- * clipped by an ancestor's `overflow: auto`/`hidden` (as table/kanban containers have).
+ * shows a floating preview of the note's content next to the cursor, in a
+ * portal so it isn't clipped by an ancestor's `overflow: auto`/`hidden` (as
+ * table/kanban containers have). Desktop (mouse) only — on touch devices
+ * there is no persistent cursor position for this to follow, so it never
+ * opens there.
  */
 export default function NoteHoverPreview({ note, children }) {
   const [visible, setVisible] = useState(false);
@@ -26,17 +31,30 @@ export default function NoteHoverPreview({ note, children }) {
     if (closeTimer.current) clearTimeout(closeTimer.current);
   };
 
-  const handleMouseEnter = useCallback((e) => {
-    if (!hasContent) return;
+  const isMouseLike = (e) => {
+    if (e.pointerType && e.pointerType !== 'mouse') return false;
+    if (typeof window !== 'undefined' && window.matchMedia && !window.matchMedia('(hover: hover)').matches) return false;
+    return true;
+  };
+
+  const handlePointerEnter = useCallback((e) => {
+    if (!hasContent || !isMouseLike(e)) return;
     clearTimers();
-    const rect = e.currentTarget.getBoundingClientRect();
+    const { clientX, clientY } = e;
     openTimer.current = setTimeout(() => {
-      setPos({ x: rect.left, y: rect.bottom + 8 });
+      setPos({ x: clientX + CURSOR_OFFSET_X, y: clientY + CURSOR_OFFSET_Y });
       setVisible(true);
     }, OPEN_DELAY);
   }, [hasContent]);
 
-  const handleMouseLeave = useCallback(() => {
+  const handlePointerMove = useCallback((e) => {
+    if (!hasContent || !isMouseLike(e)) return;
+    if (visible) {
+      setPos({ x: e.clientX + CURSOR_OFFSET_X, y: e.clientY + CURSOR_OFFSET_Y });
+    }
+  }, [hasContent, visible]);
+
+  const handlePointerLeave = useCallback(() => {
     clearTimers();
     closeTimer.current = setTimeout(() => setVisible(false), CLOSE_DELAY);
   }, []);
@@ -52,8 +70,9 @@ export default function NoteHoverPreview({ note, children }) {
   return (
     <span
       style={{ display: 'contents' }}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
+      onPointerEnter={handlePointerEnter}
+      onPointerMove={handlePointerMove}
+      onPointerLeave={handlePointerLeave}
     >
       {children}
       {visible && hasContent && createPortal(

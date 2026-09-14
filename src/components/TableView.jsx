@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import { 
-  Star, 
-  Plus, 
-  SlidersHorizontal, 
-  ArrowUpDown, 
+import {
+  Plus,
+  SlidersHorizontal,
+  ArrowUpDown,
   Sun,
   FileText,
   Search,
@@ -15,6 +14,7 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import NoteHoverPreview from './NoteHoverPreview';
+import ViewTabs from './ViewTabs';
 
 const STATUS_OPTIONS = [
   { id: 'Yapılacaklar', label: 'Yapılacaklar', colorClass: 'status-To-Do' },
@@ -35,6 +35,9 @@ export default function TableView({
   onReorderNotes 
 }) {
   const [searchQuery, setSearchQuery] = useState('');
+  // Mobile only: the search input is collapsed behind an icon button and
+  // expands into a full-width panel when tapped (see index.css).
+  const [searchOpen, setSearchOpen] = useState(false);
   const [editingStatusId, setEditingStatusId] = useState(null);
   const [editingTitleId, setEditingTitleId] = useState(null);
   const [tempTitle, setTempTitle] = useState('');
@@ -44,7 +47,7 @@ export default function TableView({
   // Column widths state (in pixels)
   const [colWidths, setColWidths] = useState(() => {
     const saved = localStorage.getItem('mynotes_col_widths');
-    return saved ? JSON.parse(saved) : { title: 380, status: 160, category: 140, assignee: 140, createdAt: 150, endDate: 150 };
+    return saved ? JSON.parse(saved) : { title: 380, status: 160, assignee: 140, createdAt: 150, endDate: 150 };
   });
 
   const [resizingCol, setResizingCol] = useState(null);
@@ -144,9 +147,8 @@ export default function TableView({
   };
 
   // Filter notes
-  let filteredNotes = notes.filter(n => 
+  let filteredNotes = notes.filter(n =>
     n.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (n.category && n.category.toLowerCase().includes(searchQuery.toLowerCase())) ||
     (n.assignee && n.assignee.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
@@ -202,43 +204,29 @@ export default function TableView({
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Top Tabs Bar */}
       <div className="notion-topbar">
-        <div className="notion-views-tab">
-          <button 
-            className={`view-tab-btn ${activeView === 'by-status' ? 'active' : ''}`}
-            onClick={() => setActiveView('by-status')}
-          >
-            <span>➔ Duruma Göre</span>
-          </button>
-
-          <button 
-            className={`view-tab-btn ${activeView === 'all-projects' ? 'active' : ''}`}
-            onClick={() => setActiveView('all-projects')}
-          >
-            <Star size={14} style={{ fill: '#eab308', color: '#eab308' }} />
-            <span>Tüm Projeler</span>
-          </button>
-
-          <button 
-            className={`view-tab-btn ${activeView === 'gantt' ? 'active' : ''}`}
-            onClick={() => setActiveView('gantt')}
-          >
-            <span>📊 Gantt</span>
-          </button>
-
-          <button className="icon-btn" onClick={onNewNote} title="Yeni Görünüm / Not Ekle">
-            <Plus size={16} />
-          </button>
-        </div>
+        <ViewTabs activeView={activeView} setActiveView={setActiveView} />
 
         {/* Right Tools */}
         <div className="topbar-actions">
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          {/* Mobile-only trigger for the search panel below; hidden on desktop
+              where the input is always visible (see index.css). */}
+          <button
+            className="icon-btn search-toggle-btn"
+            onClick={() => setSearchOpen(o => !o)}
+            title="Ara"
+          >
+            <Search size={16} />
+          </button>
+
+          <div className={`topbar-search ${searchOpen ? 'open' : ''}`}>
             <Search size={14} style={{ position: 'absolute', left: '8px', color: 'var(--text-muted)' }} />
-            <input 
+            <input
               type="text"
               placeholder="Filtrele..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              autoFocus={searchOpen}
+              onBlur={() => { if (!searchQuery) setSearchOpen(false); }}
               style={{
                 background: 'rgba(255, 255, 255, 0.05)',
                 border: '1px solid var(--border-main)',
@@ -264,7 +252,7 @@ export default function TableView({
           <button className="icon-btn" onClick={() => handleSortToggle('title')} title="İsme Göre Sırala">
             <ArrowUpDown size={16} />
           </button>
-          <button 
+          <button
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -279,8 +267,9 @@ export default function TableView({
               cursor: 'pointer'
             }}
             onClick={onNewNote}
+            title="Yeni Not Ekle"
           >
-            <Plus size={14} /> Yeni Not Ekle
+            <Plus size={14} /> <span className="btn-label">Yeni Not Ekle</span>
           </button>
         </div>
       </div>
@@ -319,24 +308,15 @@ export default function TableView({
                 />
               </th>
               
-              <th style={{ width: colWidths.category, position: 'relative' }}>
-                <div style={{ display: 'flex', alignItems: 'center', height: '100%' }}>Kategori</div>
-                <div 
-                  className="col-resizer" 
-                  onMouseDown={(e) => handleResizeStart(e, 'category')}
-                  onDoubleClick={(e) => handleAutoFit(e, 'category', 2)}
-                />
-              </th>
-              
               <th style={{ width: colWidths.assignee, position: 'relative' }}>
                 <div style={{ display: 'flex', alignItems: 'center', height: '100%' }}>Sorumlu</div>
-                <div 
-                  className="col-resizer" 
+                <div
+                  className="col-resizer"
                   onMouseDown={(e) => handleResizeStart(e, 'assignee')}
-                  onDoubleClick={(e) => handleAutoFit(e, 'assignee', 3)}
+                  onDoubleClick={(e) => handleAutoFit(e, 'assignee', 2)}
                 />
               </th>
-              
+
               <th style={{ width: colWidths.createdAt, position: 'relative' }}>
                 <div style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', height: '100%' }} onClick={() => handleSortToggle('createdAt')}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
@@ -344,13 +324,13 @@ export default function TableView({
                     Oluşturma Tarihi {sortField === 'createdAt' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                   </span>
                 </div>
-                <div 
-                  className="col-resizer" 
+                <div
+                  className="col-resizer"
                   onMouseDown={(e) => handleResizeStart(e, 'createdAt')}
-                  onDoubleClick={(e) => handleAutoFit(e, 'createdAt', 4)}
+                  onDoubleClick={(e) => handleAutoFit(e, 'createdAt', 3)}
                 />
               </th>
-              
+
               <th style={{ width: colWidths.endDate, position: 'relative' }}>
                 <div style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', height: '100%' }} onClick={() => handleSortToggle('endDate')}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
@@ -358,10 +338,10 @@ export default function TableView({
                     Bitiş Tarihi {sortField === 'endDate' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                   </span>
                 </div>
-                <div 
-                  className="col-resizer" 
+                <div
+                  className="col-resizer"
                   onMouseDown={(e) => handleResizeStart(e, 'endDate')}
-                  onDoubleClick={(e) => handleAutoFit(e, 'endDate', 5)}
+                  onDoubleClick={(e) => handleAutoFit(e, 'endDate', 4)}
                 />
               </th>
             </tr>
@@ -393,7 +373,7 @@ export default function TableView({
 
             {filteredNotes.length === 0 && (
               <tr>
-                <td colSpan={6} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
+                <td colSpan={5} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
                   Henüz not bulunmuyor veya arama kriterine uyan not yok.
                 </td>
               </tr>
@@ -401,7 +381,7 @@ export default function TableView({
 
             {/* Quick Add Row */}
             <tr>
-              <td colSpan={6} onClick={onNewNote} style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>
+              <td colSpan={5} onClick={onNewNote} style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0' }}>
                   <Plus size={16} />
                   <span>Yeni Not Ekle...</span>
@@ -561,24 +541,6 @@ function SortableNoteRow({
             ))}
           </div>
         )}
-      </td>
-
-      {/* Category Column */}
-      <td data-label="Kategori">
-        <span style={{
-          fontSize: '0.78rem', 
-          background: 'rgba(255, 255, 255, 0.05)', 
-          padding: '3px 8px', 
-          borderRadius: '4px',
-          color: 'var(--text-secondary)',
-          display: 'inline-block',
-          maxWidth: '100%',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          verticalAlign: 'bottom'
-        }}>
-          {note.category || 'Genel'}
-        </span>
       </td>
 
       {/* Assignee Column */}

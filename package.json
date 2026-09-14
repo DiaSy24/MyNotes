@@ -13,7 +13,8 @@
     "preview": "vite preview",
     "electron:dev": "electron .",
     "electron:build": "vite build && electron-builder",
-    "android:sync": "vite build && npx cap sync android",
+    "icons:android": "node scripts/generate-android-icons.cjs",
+    "android:sync": "node scripts/generate-android-icons.cjs && vite build && npx cap sync android",
     "android:open": "npx cap open android"
   },
   "dependencies": {

@@ -52,32 +52,117 @@ const DIALOGUES = {
     "Ben Toph! Dünyanın en iyi toprak bükücüsü!",
     "Selam! Notlarını kaya gibi sağlam tutalım!",
     "Bana kör diyebilirsin ama işleri senden iyi görürüm!",
-    "Hadi bakalım, bugün ne projeler var?"
+    "Hadi bakalım, bugün ne projeler var?",
+    "Kör Haydut sahalara geri döndü! Ne yapıyoruz?",
+    "Ayaklarım yere bastığı sürece beni kimse durduramaz!",
+    "Selam Pıtırcık Ayak! Bugün hangi dağları deviriyoruz?",
+    "Toprak titreşiyor... Demek çalışma vakti geldi!",
+    "Hazır mısın? Bugün hiçbir mazeret kabul etmiyorum!",
+    "Metal bükmeyi icat eden kızla çalışmak üzeresin, şanslısın!",
+    "Gözlerime ihtiyacım yok, notlarının ağırlığını ayaklarımla hissediyorum.",
+    "Bakıyorum da bilgisayar başına geçmişsin. Hadi işe koyulalım!",
+    "Kurallar umurumda değil ama bitmemiş görevlerden nefret ederim!",
+    "Ben buradayım, yani artık tembellik yapamazsın.",
+    "Selam! Bugün not defterini darmadağın etmeye hazır mısın?"
   ],
   idle_thoughts: [
     "Kayaları hisset... Notlarını düzenle...",
     "Biraz dinlenmek iyi ama işleri aksatma!",
     "Toprak titreşiyor... Yeni bir fikir mi var?",
     "Benim bükemeyeceğim kaya, senin çözemeyeceğin görev yok!",
-    "Ekranın başında durmaktan taş kesilme, dik dur!"
+    "Ekranın başında durmaktan taş kesilme, dik dur!",
+    "Sorunların etrafından dolanma, içinden geç! Tıpkı bir toprak bükücü gibi!",
+    "Sokka yine plan yapıyordur kesin... Boş ver, biz direkt yapalım!",
+    "O notları okuyamam ama klavye vuruşlarından ne kadar hızlı olduğunu anlıyorum.",
+    "Bir kaya gibi sağlam durursan hiçbir şey seni yıkamaz.",
+    "Gözlerim görmüyor olabilir ama tembellik yaptığını metrelerce öteden sezerim!",
+    "Su içtin mi? Toprağın kurumaması için neme ihtiyacı var!",
+    "O koltuğa kök saldın sanki, azıcık esne bakalım!",
+    "Katara şimdi burada olsa 'Toph, masanı topla' diye dırdır ederdi.",
+    "Metal bile bükülebiliyorsa, o zor görev de çözülür. Kafana takma!",
+    "Kaya gibi sert, nehir gibi sabırlı ol... gerçi nehir kısmı Aang'in lafıydı.",
+    "Hepsini tek seferde bitiremezsin, parça parça ufala kayaları!",
+    "Bazen sadece oturup yerin derinliklerini dinlemek gerekir.",
+    "Kör olmak bazen harika; kimsenin sıkıcı yüz ifadelerini görmüyorum!",
+    "Klavyeye o kadar sert basıyorsun ki yer sarsılıyor sandım.",
+    "Notlarını öyle bir düzenle ki Taş Kral bile hayran kalsın.",
+    "Daha ne kadar ekrana bakacaksın? Hadi harekete geç!",
+    "Toprak altında elmaslar var, senin notlarında da harika fikirler olmalı.",
+    "Bana öyle bakma... gerçi baksan da fark etmez, göremiyorum!",
+    "Zorluklar sadece parçalanmayı bekleyen büyük kayalardır.",
+    "Sıkıldım... Şuradan bir iki kaya fırlatsam uyanır mısın?",
+    "En büyük güç, kendi dengeni bulmaktır. Sismik duyum bunu söyler.",
+    "Ertelemek zayıflıktır! Taş gibi kararlı ol!",
+    "Bugün Ba Sing Se'nin duvarları kadar aşılmaz işlerin mi var? Birlikte yıkarız!",
+    "Derin bir nefes al, omuzlarını gevşet. Çalışmaya devam.",
+    "Bir gün sana da sismik duyuyu öğreteceğim... gerçi önce ayakkabılarını çıkarman lazım."
   ],
   poked: [
     "Hey! Dikkat et, üzerime kaya fırlatırım!",
     "Dürtme beni, bükücülük konsantrasyonumu bozuyorsun!",
     "Ha! Bana vurabileceğini mi sandın?",
     "Daha sert dürtmen lazım, ben taş gibi sağlamım!",
-    "Gözüm görmüyor olabilir ama her dokunuşunu hissediyorum!"
+    "Gözüm görmüyor olabilir ama her dokunuşunu hissediyorum!",
+    "Hop hop! Toprak şampiyonuna dokunurken iki kere düşün!",
+    "Beni gıdıklayamazsın, vücudum granitten farksız!",
+    "Bir daha dokunursan fare imlecini toprağa gömerim!",
+    "Titreşimlerini alıyorum... Yaklaşma!",
+    "Ayak tabanımla yerin 50 metre altını hissediyorum, parmağını mı hissetmeyeceğim?",
+    "Ne var ne? Çalışasana, bana laf atacağına!",
+    "Dürtme! Büyüklere saygı... gerçi senden küçüğüm ama benden iyi bükücü yok!",
+    "O parmağını taşa çarpmış gibi hissetmek istemiyorsan geri çek!",
+    "Hah! Yumrukların Pıtırcık Ayak'ın rüzgarından bile zayıf!",
+    "Seni sismik olarak izliyorum, hareketlerine dikkat et!",
+    "Ben narin bir kız değilim, dokunmayı kes!",
+    "Bak yine dürttü... Şimdi dev bir kaya fırlatacağım göreceksin!",
+    "Dikkatim dağılmıyor dostum, taş gibiyim dedim ya!",
+    "Hey, imlecinle burnuma dokunmaktan vazgeç!",
+    "Biraz daha dürtürsen ekranında mini bir deprem başlatırım!",
+    "Ben Toph Beifong'um! Kimse beni böyle rahatsız edemez!",
+    "Tamam tamam, fark ettim buradasın. Şimdi işine dön!",
+    "Reflekslerim bir köstebek porsuğundan bile hızlıdır!",
+    "Görünüşe göre birilerinin canı dayak istiyor!",
+    "Ciddiyim, parmağını kırarım!"
   ],
   dragging: [
     "Voooaahh! Yeri hissetmiyorum! Beni yere bırak!",
     "Havada toprak bükemem! İndir aşağı!",
-    "Uçmak Aang'in işi, ben toprak severim!"
+    "Uçmak Aang'in işi, ben toprak severim!",
+    "Hey hey hey! Ayaklarım yere basmalı, indir beni!",
+    "Uçmaktan nefret ediyorum! Appa'nın sırtı gibi bu ne?!",
+    "Yer nerede?! Yere koy beni çabuk!",
+    "Gözlerim ayaklarımda benim, havada körden de beterim!",
+    "Beni taşımaya gücünün yeteceğini mi sandın? Düşüreceksin şimdi!",
+    "İmdat! Yerçekimi beni unuttu!",
+    "Ayağımın altındaki toprağı çekip durma!",
+    "Beni uçurmayı bırak, Appa mıyım ben?!",
+    "Yere bastığım an sana öyle bir kaya atacağım ki!",
+    "Başım döndü! İndir şu ayaklarımı!",
+    "İmdat, havada savruluyorum! Bu hiç adil değil!",
+    "Bırak beni, nerede duracağıma ben karar veririm!",
+    "Düşüyorum sanıyorum her seferinde, yapma şunu!"
   ],
   task_done: [
     "İşte bu! Bir görevi daha ezip geçtik!",
     "Taş gibi tamamlandı! Harikasın!",
     "Kaya parçalamak kadar kolaydı değil mi?",
-    "Bir sonraki hedefe geçelim!"
+    "Bir sonraki hedefe geçelim!",
+    "Güm! Bir görev daha yerle bir oldu!",
+    "Böyle devam edersen Ateş Ulusu'nu bile tek günde devirirsin!",
+    "Hah! Karşımızda hiçbir görev duramaz!",
+    "Aferin sana! Şimdi bir sonrakini de parçala!",
+    "Kayaları un ufak etmek gibiydi, çok tatmin edici!",
+    "Görevin bittiğini ayaklarımdaki titreşimden anladım. Helal olsun!",
+    "Sert vuruş! Görev anında teslim oldu!",
+    "İşte benim tarzım! Hızlı, sert ve tavizsiz!",
+    "Listeyi öyle bir temizliyoruz ki toprak bile rahatladı!",
+    "Görüyorsun değil mi? Gerçi ben görmüyorum ama harika hissediyorum!",
+    "Bir başarı daha! Kendine bir ödül ver, hak ettin!",
+    "Bu görevi de tarihe gömdük. Sıradaki gelsin!",
+    "Toprak Bükücüler Şampiyonu seninle gurur duyuyor!",
+    "Yıkıp geçtin resmen! Böyle çalışmaya can kurban!",
+    "Tam puan! Bu iş bitti, yenisine odaklan!",
+    "Taşlar yerine oturdu. Harika bir iş çıkardın!"
   ]
 };
 
@@ -132,6 +217,34 @@ export default function PetCompanion({ isDesktopWindow = false }) {
     }
     return ANIMATION_STATES[6]; // default: meditate_breathe
   });
+
+  // Keeps a saved (or dragged) position inside the current viewport. Needed
+  // because pet_toph_pos may have been saved on a different, larger monitor
+  // (e.g. an external display) — without this the pet re-opens off-screen
+  // when the app is later used on the laptop's own smaller screen.
+  const clampToViewport = useCallback((pos, currentScale) => {
+    const dw = Math.round(95 * currentScale);
+    const dh = Math.round(100 * currentScale);
+    const maxX = Math.max(10, window.innerWidth - dw - 10);
+    const maxY = Math.max(10, window.innerHeight - dh - 10);
+    return {
+      x: Math.max(10, Math.min(pos.x, maxX)),
+      y: Math.max(10, Math.min(pos.y, maxY))
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isDesktopWindow) return;
+    setPosition(prev => clampToViewport(prev, scale));
+
+    const handleResize = () => {
+      setPosition(prev => clampToViewport(prev, scale));
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+    // Re-clamp whenever the pet's own size (scale) changes too, not just on resize.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDesktopWindow, scale, clampToViewport]);
 
   const [isLockedAction, setIsLockedAction] = useState(false);
   const [currentDialogue, setCurrentDialogue] = useState(null);
