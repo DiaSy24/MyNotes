@@ -1,41 +1,215 @@
 import { supabase } from './supabaseClient';
+import { enqueue, getLastUserId, isNetworkError, isOnline } from './offlineStore';
 
 const getCurrentUserId = async () => {
-  const { data: { user } } = await supabase.auth.getUser();
-  return user?.id;
+  // getSession reads the locally stored session (no network round trip), so
+  // writes still know who the user is while offline.
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.user?.id || getLastUserId();
+  } catch {
+    return getLastUserId();
+  }
 };
 
-export const fetchWorkspaces = async () => {
-  const { data, error } = await supabase
+const newId = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+};
+
+const notifySaveSuccess = (message) => {
+  window.dispatchEvent(new CustomEvent('app_toast_notify', { detail: { message } }));
+};
+
+const OFFLINE_SAVED_MESSAGE = 'Çevrimdışı kaydedildi, bağlantı gelince eşitlenecek';
+
+// ==========================================
+// ROW MAPPERS (DB snake_case -> UI camelCase)
+// ==========================================
+
+const LEGACY_STATUS = {
+  'To Do': 'Yapılacaklar',
+  'In Progress': 'Devam Ediyor',
+  'In Review': 'İnceleniyor',
+  'Done': 'Tamamlandı'
+};
+
+export const mapWorkspaceRow = (ws) => {
+  let icon = '📝';
+  let color = ws.color;
+  try {
+    if (ws.color && ws.color.startsWith('{')) {
+      const parsed = JSON.parse(ws.color);
+      icon = parsed.icon || icon;
+      color = parsed.hex || color;
+    }
+  } catch { /* plain hex color */ }
+
+  return {
+    ...ws,
+    name: ws.title, // Sidebar expects ws.name
+    icon,
+    color
+  };
+};
+
+export const mapNoteRow = (n) => ({
+  id: n.id,
+  workspaceId: n.workspace_id,
+  title: n.title,
+  content: n.content,
+  status: LEGACY_STATUS[n.status] || n.status,
+  order: n.order ?? 0,
+  updatedAt: n.updated_at,
+  createdAt: n.created_at,
+  startDate: n.start_date,
+  endDate: n.end_date,
+  is_trash: n.is_trash
+});
+
+export const mapTrashNoteRow = (n) => ({
+  ...mapNoteRow(n),
+  type: 'note',
+  deletedAt: n.updated_at
+});
+
+export const mapTrashWorkspaceRow = (w) => {
+  const mapped = mapWorkspaceRow(w);
+  return {
+    id: w.id,
+    name: w.title,
+    icon: mapped.icon === '📝' ? '📂' : mapped.icon,
+    type: 'workspace',
+    deletedAt: w.updated_at
+  };
+};
+
+// ==========================================
+// REMOTE EXECUTORS
+// Each resolves to { data, error }. They are used both for live writes and
+// for replaying queued offline writes, so their arguments must be plain JSON.
+// ==========================================
+
+const firstError = (results) => results.find(r => r.error)?.error || null;
+
+const remote = {
+  saveNote: (dbNote) => supabase.from('notes').upsert(dbNote).select(),
+
+  saveWorkspace: (dbWorkspace) => supabase.from('workspaces').upsert(dbWorkspace).select(),
+
+  deleteWorkspace: (workspaceId, timestamp) => supabase
     .from('workspaces')
-    .select('*')
-    .eq('is_trash', false)
-    .order('order', { ascending: true })
-    .order('created_at', { ascending: true });
-    
-  if (error) {
+    .update({ is_trash: true, updated_at: timestamp })
+    .eq('id', workspaceId),
+
+  moveNoteToTrash: (noteId, timestamp) => supabase
+    .from('notes')
+    .update({ is_trash: true, updated_at: timestamp })
+    .eq('id', noteId),
+
+  restoreItem: async (itemId, timestamp) => {
+    // The id may belong to either a note or a workspace.
+    const results = await Promise.all([
+      supabase.from('notes').update({ is_trash: false, updated_at: timestamp }).eq('id', itemId),
+      supabase.from('workspaces').update({ is_trash: false, updated_at: timestamp }).eq('id', itemId)
+    ]);
+    return { data: null, error: firstError(results) };
+  },
+
+  permanentlyDelete: async (itemId) => {
+    const results = await Promise.all([
+      supabase.from('notes').delete().eq('id', itemId),
+      supabase.from('workspaces').delete().eq('id', itemId)
+    ]);
+    return { data: null, error: firstError(results) };
+  },
+
+  emptyTrash: async () => {
+    const results = [
+      await supabase.from('notes').delete().eq('is_trash', true),
+      await supabase.from('workspaces').delete().eq('is_trash', true)
+    ];
+    return { data: null, error: firstError(results) };
+  },
+
+  updateWorkspaceOrders: async (updates) => {
+    const results = await Promise.all(
+      updates.map(u => supabase.from('workspaces').update({ order: u.order }).eq('id', u.id))
+    );
+    return { data: null, error: firstError(results) };
+  },
+
+  updateNoteOrders: async (updates) => {
+    const results = await Promise.all(
+      updates.map(u => supabase.from('notes').update({ order: u.order }).eq('id', u.id))
+    );
+    return { data: null, error: firstError(results) };
+  }
+};
+
+// Replays one queued operation (see offlineStore.flushOutbox).
+export const executeQueuedOp = async (op) => {
+  const fn = remote[op.type];
+  if (!fn) return { ok: true }; // unknown/obsolete op: drop it
+  try {
+    const { error } = await fn(...(op.args || []));
+    return error ? { ok: false, error } : { ok: true };
+  } catch (error) {
+    return { ok: false, error };
+  }
+};
+
+// Runs a write against Supabase, or queues it when the network is unavailable.
+// Returns { ok, data, queued }.
+const runWrite = async (type, args, key) => {
+  const queue = () => {
+    enqueue({ type, args, key });
+    notifySaveSuccess(OFFLINE_SAVED_MESSAGE);
+    return { ok: true, data: null, queued: true };
+  };
+
+  if (!isOnline()) return queue();
+
+  try {
+    const { data, error } = await remote[type](...args);
+    if (error) {
+      if (isNetworkError(error)) return queue();
+      return { ok: false, error };
+    }
+    return { ok: true, data, queued: false };
+  } catch (error) {
+    if (isNetworkError(error)) return queue();
+    return { ok: false, error };
+  }
+};
+
+// ==========================================
+// WORKSPACES
+// ==========================================
+
+// Returns null when the request failed (e.g. offline) so callers can tell
+// "could not load" apart from "no workspaces".
+export const fetchWorkspaces = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('workspaces')
+      .select('*')
+      .eq('is_trash', false)
+      .order('order', { ascending: true })
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching workspaces:', error);
+      return null;
+    }
+    return (data || []).map(mapWorkspaceRow);
+  } catch (error) {
     console.error('Error fetching workspaces:', error);
     return null;
   }
-
-  return data.map(ws => {
-    let icon = '📝';
-    let color = ws.color;
-    try {
-      if (ws.color && ws.color.startsWith('{')) {
-        const parsed = JSON.parse(ws.color);
-        icon = parsed.icon || icon;
-        color = parsed.hex || color;
-      }
-    } catch(e) {}
-    
-    return {
-      ...ws,
-      name: ws.title, // Sidebar expects ws.name
-      icon,
-      color
-    };
-  }) || [];
 };
 
 export const saveWorkspace = async (workspace) => {
@@ -44,7 +218,7 @@ export const saveWorkspace = async (workspace) => {
     console.error('User not logged in');
     return null;
   }
-  
+
   // Convert name to title for DB if it exists
   const dbWorkspace = { ...workspace };
   if (dbWorkspace.name && !dbWorkspace.title) {
@@ -60,131 +234,86 @@ export const saveWorkspace = async (workspace) => {
   delete dbWorkspace.icon;
   dbWorkspace.color = dbColor;
 
-  const { data, error } = await supabase
-    .from('workspaces')
-    .upsert({ ...dbWorkspace, user_id: userId })
-    .select();
-    
-  if (error) {
-    console.error('Error saving workspace:', error);
-    alert('Kayıt başarısız: ' + error.message);
+  // Client-side ids let a workspace created offline keep the same id once synced.
+  const now = new Date().toISOString();
+  if (!dbWorkspace.id) {
+    dbWorkspace.id = newId();
+    dbWorkspace.created_at = now;
+  }
+  dbWorkspace.updated_at = now;
+  dbWorkspace.user_id = dbWorkspace.user_id || userId;
+
+  const result = await runWrite('saveWorkspace', [dbWorkspace], dbWorkspace.id);
+
+  if (!result.ok) {
+    console.error('Error saving workspace:', result.error);
+    alert('Kayıt başarısız: ' + result.error.message);
     return null;
   }
+
+  if (result.queued) return mapWorkspaceRow(dbWorkspace);
+
   notifySaveSuccess('Çalışma alanı kaydedildi');
-  
-  if (data && data[0]) {
-    let parsedIcon = '📝';
-    try {
-      if (data[0].color && data[0].color.startsWith('{')) {
-        parsedIcon = JSON.parse(data[0].color).icon || parsedIcon;
-      }
-    } catch(e) {}
-    return { ...data[0], name: data[0].title, icon: parsedIcon };
-  }
-  return null;
+  return result.data?.[0] ? mapWorkspaceRow(result.data[0]) : mapWorkspaceRow(dbWorkspace);
 };
 
 export const deleteWorkspace = async (workspaceId) => {
-  const { error } = await supabase
-    .from('workspaces')
-    .update({ is_trash: true, updated_at: new Date().toISOString() })
-    .eq('id', workspaceId);
-    
-  if (error) {
-    console.error('Error deleting workspace:', error);
+  const result = await runWrite('deleteWorkspace', [workspaceId, new Date().toISOString()]);
+  if (!result.ok) {
+    console.error('Error deleting workspace:', result.error);
     return false;
   }
-  notifySaveSuccess('Çalışma alanı silindi');
+  if (!result.queued) notifySaveSuccess('Çalışma alanı silindi');
   return true;
 };
 
+// ==========================================
+// NOTES
+// ==========================================
+
 export const fetchNotes = async () => {
-  const { data, error } = await supabase
-    .from('notes')
-    .select('*')
-    .eq('is_trash', false)
-    .order('order', { ascending: true })
-    .order('updated_at', { ascending: false });
-    
-  if (error) {
+  try {
+    const { data, error } = await supabase
+      .from('notes')
+      .select('*')
+      .eq('is_trash', false)
+      .order('order', { ascending: true })
+      .order('updated_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching notes:', error);
+      return null;
+    }
+    return (data || []).map(mapNoteRow);
+  } catch (error) {
     console.error('Error fetching notes:', error);
-    return [];
+    return null;
   }
-  
-  // Transform db snake_case to frontend camelCase
-  return data.map(n => ({
-    id: n.id,
-    workspaceId: n.workspace_id,
-    title: n.title,
-    content: n.content,
-    status: n.status,
-    order: n.order ?? 0,
-    updatedAt: n.updated_at,
-    createdAt: n.created_at,
-    startDate: n.start_date,
-    endDate: n.end_date,
-    is_trash: n.is_trash
-  })) || [];
 };
 
 export const fetchTrashNotes = async () => {
-  // Fetch trash notes
-  const { data: notesData, error: notesError } = await supabase
-    .from('notes')
-    .select('*')
-    .eq('is_trash', true)
-    .order('updated_at', { ascending: false });
-    
-  if (notesError) console.error('Error fetching trash notes:', notesError);
-  
-  // Fetch trash workspaces
-  const { data: wsData, error: wsError } = await supabase
-    .from('workspaces')
-    .select('*')
-    .eq('is_trash', true)
-    .order('updated_at', { ascending: false });
-    
-  if (wsError) console.error('Error fetching trash workspaces:', wsError);
+  try {
+    const [{ data: notesData, error: notesError }, { data: wsData, error: wsError }] = await Promise.all([
+      supabase.from('notes').select('*').eq('is_trash', true).order('updated_at', { ascending: false }),
+      supabase.from('workspaces').select('*').eq('is_trash', true).order('updated_at', { ascending: false })
+    ]);
 
-  const trashItems = [];
-  
-  if (notesData) {
-    trashItems.push(...notesData.map(n => ({
-      id: n.id,
-      workspaceId: n.workspace_id,
-      title: n.title,
-      content: n.content,
-      status: n.status,
-      order: n.order ?? 0,
-      updatedAt: n.updated_at,
-      createdAt: n.created_at,
-      is_trash: n.is_trash,
-      type: 'note',
-      deletedAt: n.updated_at
-    })));
-  }
+    if (notesError || wsError) {
+      console.error('Error fetching trash:', notesError || wsError);
+      return null;
+    }
 
-  if (wsData) {
-    trashItems.push(...wsData.map(w => {
-      let icon = '📂';
-      try {
-        if (w.color && w.color.startsWith('{')) {
-          icon = JSON.parse(w.color).icon || icon;
-        }
-      } catch(e) {}
-      
-      return {
-        id: w.id,
-        name: w.title, // map title to name for UI
-        icon,
-        type: 'workspace',
-        deletedAt: w.updated_at
-      };
-    }));
+    const trashItems = [
+      ...(notesData || []).map(mapTrashNoteRow),
+      ...(wsData || []).map(mapTrashWorkspaceRow)
+    ];
+
+    // Sort combined by deletedAt desc
+    return trashItems.sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt));
+  } catch (error) {
+    console.error('Error fetching trash:', error);
+    return null;
   }
-  
-  // Sort combined by deletedAt desc
-  return trashItems.sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt));
 };
 
 const sanitizeTimestamp = (val) => {
@@ -209,8 +338,13 @@ export const saveNote = async (note) => {
     return null;
   }
 
+  const now = new Date().toISOString();
+  // Legacy temporary 'note-123' ids (or no id) get a real UUID generated here,
+  // so a note created offline keeps the same id once it syncs.
+  const id = note.id && !note.id.startsWith('note-') ? note.id : newId();
+
   const dbNote = {
-    id: note.id && !note.id.startsWith('note-') ? note.id : undefined, // Let Supabase handle UUID if it's a new fake ID
+    id,
     user_id: userId,
     workspace_id: note.workspaceId,
     title: note.title || 'İsimsiz Not',
@@ -220,81 +354,63 @@ export const saveNote = async (note) => {
     start_date: sanitizeTimestamp(note.startDate),
     end_date: sanitizeTimestamp(note.endDate),
     is_trash: note.is_trash || false,
-    updated_at: new Date().toISOString()
+    updated_at: now
   };
 
-  // If it's a completely new note with our old 'note-123' id format, we must not pass the id to Supabase 
-  // so Supabase can generate a valid UUID.
-  if (note.id && note.id.startsWith('note-')) {
-    delete dbNote.id;
-  }
+  const result = await runWrite('saveNote', [dbNote], id);
 
-  const { data, error } = await supabase
-    .from('notes')
-    .upsert(dbNote)
-    .select();
-    
-  if (error) {
-    console.error('Error saving note:', error);
-    alert('Not kaydedilemedi: ' + error.message);
+  if (!result.ok) {
+    console.error('Error saving note:', result.error);
+    alert('Not kaydedilemedi: ' + result.error.message);
     return null;
   }
+
+  if (result.queued) {
+    return { ...dbNote, created_at: note.createdAt || now };
+  }
+
   notifySaveSuccess('Not kaydedildi');
-  return data?.[0];
+  return result.data?.[0] || { ...dbNote, created_at: note.createdAt || now };
 };
 
 export const moveNoteToTrash = async (noteId) => {
-  const { error } = await supabase
-    .from('notes')
-    .update({ is_trash: true, updated_at: new Date().toISOString() })
-    .eq('id', noteId);
-    
-  if (error) {
-    console.error('Error moving note to trash:', error);
+  const result = await runWrite('moveNoteToTrash', [noteId, new Date().toISOString()]);
+  if (!result.ok) {
+    console.error('Error moving note to trash:', result.error);
     return false;
   }
-  notifySaveSuccess('Not Çöp Kutusuna taşındı');
+  if (!result.queued) notifySaveSuccess('Not Çöp Kutusuna taşındı');
   return true;
 };
 
 export const restoreNoteFromTrash = async (itemId) => {
-  // Try notes first
-  const { error: noteError } = await supabase
-    .from('notes')
-    .update({ is_trash: false, updated_at: new Date().toISOString() })
-    .eq('id', itemId);
-    
-  if (!noteError) {
-    // Note restored (or didn't exist, which is fine, we'll try workspace)
+  const result = await runWrite('restoreItem', [itemId, new Date().toISOString()]);
+  if (!result.ok) {
+    console.error('Error restoring item:', result.error);
+    return false;
   }
-
-  const { error: wsError } = await supabase
-    .from('workspaces')
-    .update({ is_trash: false, updated_at: new Date().toISOString() })
-    .eq('id', itemId);
-    
-  notifySaveSuccess('Öğe geri yüklendi');
+  if (!result.queued) notifySaveSuccess('Öğe geri yüklendi');
   return true;
 };
 
 export const permanentlyDeleteNote = async (itemId) => {
-  await supabase.from('notes').delete().eq('id', itemId);
-  await supabase.from('workspaces').delete().eq('id', itemId);
-  
-  notifySaveSuccess('Öğe kalıcı olarak silindi');
+  const result = await runWrite('permanentlyDelete', [itemId]);
+  if (!result.ok) {
+    console.error('Error deleting item:', result.error);
+    return false;
+  }
+  if (!result.queued) notifySaveSuccess('Öğe kalıcı olarak silindi');
   return true;
 };
 
 export const emptyTrashBin = async () => {
-  await supabase.from('notes').delete().eq('is_trash', true);
-  await supabase.from('workspaces').delete().eq('is_trash', true);
-  
-  notifySaveSuccess('Çöp Kutusu boşaltıldı');
+  const result = await runWrite('emptyTrash', []);
+  if (!result.ok) {
+    console.error('Error emptying trash:', result.error);
+    return false;
+  }
+  if (!result.queued) notifySaveSuccess('Çöp Kutusu boşaltıldı');
   return true;
-};
-
-const notifySaveSuccess = (message) => {
-  window.dispatchEvent(new CustomEvent('app_toast_notify', { detail: { message } }));
 };
 
 // Dummy functions to satisfy UI for export/import temporarily since we moved to DB
@@ -410,34 +526,22 @@ export const removeWorkspaceMember = async (memberId) => {
 // Ordering updates
 export const updateWorkspaceOrders = async (updates) => {
   // updates: array of { id, order }
-  try {
-    const promises = updates.map(u => 
-      supabase.from('workspaces').update({ order: u.order }).eq('id', u.id)
-    );
-    await Promise.all(promises);
-    return true;
-  } catch (error) {
-    console.error('Error updating workspace orders:', error);
+  const result = await runWrite('updateWorkspaceOrders', [updates]);
+  if (!result.ok) {
+    console.error('Error updating workspace orders:', result.error);
     return false;
   }
+  return true;
 };
 
 export const updateNoteOrders = async (updates) => {
-  try {
-    const results = await Promise.all(
-      updates.map(u => supabase.from('notes').update({ order: u.order }).eq('id', u.id))
-    );
-    const failed = results.filter(r => r.error);
-    if (failed.length > 0) {
-      console.error('Error updating note orders:', failed.map(f => f.error));
-      window.dispatchEvent(new CustomEvent('app_toast_notify', {
-        detail: { message: 'Not sırası kaydedilemedi, tekrar deneyin.' }
-      }));
-      return false;
-    }
-    return true;
-  } catch (error) {
-    console.error('Error updating note orders:', error);
+  const result = await runWrite('updateNoteOrders', [updates]);
+  if (!result.ok) {
+    console.error('Error updating note orders:', result.error);
+    window.dispatchEvent(new CustomEvent('app_toast_notify', {
+      detail: { message: 'Not sırası kaydedilemedi, tekrar deneyin.' }
+    }));
     return false;
   }
+  return true;
 };

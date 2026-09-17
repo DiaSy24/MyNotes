@@ -10,12 +10,12 @@ import AuthModal from './components/AuthModal';
 import MembersModal from './components/MembersModal';
 import PetCompanion from './components/PetCompanion';
 import { supabase } from './services/supabaseClient';
-import { 
-  fetchWorkspaces, 
-  saveWorkspace, 
+import {
+  fetchWorkspaces,
+  saveWorkspace,
   deleteWorkspace,
-  fetchNotes, 
-  saveNote, 
+  fetchNotes,
+  saveNote,
   fetchTrashNotes,
   moveNoteToTrash,
   restoreNoteFromTrash,
@@ -23,23 +23,49 @@ import {
   emptyTrashBin,
   updateWorkspaceOrders,
   updateNoteOrders,
-  getWorkspaceMembers
+  getWorkspaceMembers,
+  executeQueuedOp,
+  mapNoteRow,
+  mapTrashNoteRow,
+  mapWorkspaceRow,
+  mapTrashWorkspaceRow
 } from './services/storageService';
-import { CheckCircle, Loader2, Menu } from 'lucide-react';
+import {
+  isOnline,
+  loadCache,
+  saveCache,
+  getLastUserId,
+  setLastUserId,
+  setOutboxUser,
+  flushOutbox,
+  getQueue,
+  emitSyncStatus
+} from './services/offlineStore';
+import { CheckCircle, Loader2, Menu, CloudOff, RefreshCw } from 'lucide-react';
 import { parseContent, serializeBlocks } from './utils/noteBlocks';
+
+const sortByDeletedAt = (items) => [...items].sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt));
+const sortWorkspaces = (items) => [...items].sort((a, b) =>
+  (a.order ?? 0) - (b.order ?? 0) || new Date(a.created_at) - new Date(b.created_at)
+);
+// A realtime row only replaces the local copy if it isn't older than it.
+const isNotOlder = (incomingTs, localTs) => !localTs || !incomingTs || new Date(incomingTs) >= new Date(localTs);
 
 export default function App() {
   const [session, setSession] = useState(null);
+  // Set when the app starts offline and the stored session could not be
+  // restored: the last signed-in user's cached data is shown instead.
+  const [offlineUserId, setOfflineUserId] = useState(null);
   const [isInitializing, setIsInitializing] = useState(true);
 
   const [workspaces, setWorkspaces] = useState([]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState(null);
   const [notes, setNotes] = useState([]);
   const [trashNotes, setTrashNotes] = useState([]);
-  
+
   // Project members for the active workspace
   const [projectMembers, setProjectMembers] = useState([]);
-  
+
   // Members Modal state
   const [isMembersModalOpen, setIsMembersModalOpen] = useState(false);
   const [manageWorkspaceId, setManageWorkspaceId] = useState(null);
@@ -47,39 +73,82 @@ export default function App() {
 
   const [activeCategory, setActiveCategory] = useState('all');
   const [activeView, setActiveView] = useState('all-projects');
-  
+
   const [selectedNote, setSelectedNote] = useState(null);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
   const [isFetchingData, setIsFetchingData] = useState(false);
+  const [syncStatus, setSyncStatus] = useState({ online: isOnline(), pending: 0, flushing: false });
+
+  const userId = session?.user?.id || offlineUserId;
 
   // Guards against duplicate workspace seeding when refreshAppData runs
   // multiple times in parallel (INITIAL_SESSION + TOKEN_REFRESHED etc.)
   const isSeedingWorkspaceRef = useRef(false);
   const hasSeededWorkspaceRef = useRef(false);
+  // True once state holds real data (from cache or server), so the cache is
+  // never overwritten with the empty initial state.
+  const hasLoadedDataRef = useRef(false);
+  // Long-lived listeners (realtime, online events) call the latest version.
+  const userIdRef = useRef(userId);
+  userIdRef.current = userId;
+  const hasSessionRef = useRef(false);
+  hasSessionRef.current = Boolean(session);
+  const refreshRef = useRef(null);
 
   // Setup Supabase Auth Listener
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // Offline, restoring an expired session can keep retrying the token
+    // refresh for a long time; don't block startup on it. A session that
+    // arrives later is still delivered through onAuthStateChange.
+    const sessionPromise = supabase.auth.getSession();
+    const startup = isOnline()
+      ? sessionPromise
+      : Promise.race([
+          sessionPromise,
+          new Promise(resolve => setTimeout(() => resolve({ data: { session: null } }), 3000))
+        ]);
+
+    startup.then(({ data: { session } }) => {
       setSession(session);
-      if (!session) {
-        setIsAuthModalOpen(true);
+      if (session) {
+        setLastUserId(session.user.id);
+      } else {
+        const lastUser = getLastUserId();
+        if (!isOnline() && lastUser && loadCache(lastUser)) {
+          setOfflineUserId(lastUser);
+        } else {
+          setIsAuthModalOpen(true);
+        }
       }
       setIsInitializing(false);
     });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (session) {
+        setSession(session);
+        setLastUserId(session.user.id);
+        setOfflineUserId(null);
         setIsAuthModalOpen(false);
-      } else {
+        return;
+      }
+
+      setSession(null);
+      if (event === 'SIGNED_OUT') {
         // Clear data when logged out
+        hasLoadedDataRef.current = false;
+        setLastUserId(null);
+        setOfflineUserId(null);
+        setOutboxUser(null);
         setWorkspaces([]);
         setNotes([]);
         setTrashNotes([]);
+        setActiveWorkspaceId(null);
+        setIsAuthModalOpen(true);
+      } else if (isOnline() || !getLastUserId()) {
         setIsAuthModalOpen(true);
       }
     });
@@ -87,15 +156,40 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Fetch data when the logged-in user changes (compare by id, not by
+  // Load data when the logged-in user changes (compare by id, not by
   // session object reference — getSession/INITIAL_SESSION/TOKEN_REFRESHED
   // each hand back a distinct session object for the same user and would
   // otherwise re-trigger this effect and run refreshAppData concurrently).
+  // Cached data is painted first, then replaced by fresh server data.
+  // Also re-runs when a live session appears after an offline start, so the
+  // queued changes get sent and fresh data is fetched.
   useEffect(() => {
-    if (session) {
-      refreshAppData();
+    if (!userId) return;
+    setOutboxUser(userId);
+    const cached = loadCache(userId);
+    if (cached) {
+      setWorkspaces(cached.workspaces || []);
+      setNotes(cached.notes || []);
+      setTrashNotes(cached.trashNotes || []);
+      if (cached.activeWorkspaceId) setActiveWorkspaceId(cached.activeWorkspaceId);
+      hasLoadedDataRef.current = true;
     }
-  }, [session?.user?.id]);
+    refreshAppData();
+  }, [userId, session?.user?.id]);
+
+  // Persist the current data for offline use.
+  useEffect(() => {
+    if (!userId || !hasLoadedDataRef.current) return;
+    saveCache(userId, { workspaces, notes, trashNotes, activeWorkspaceId });
+  }, [userId, workspaces, notes, trashNotes, activeWorkspaceId]);
+
+  // Keep the active workspace valid when workspaces load, get deleted locally
+  // or are removed from another device.
+  useEffect(() => {
+    if (workspaces.length > 0 && !workspaces.some(w => w.id === activeWorkspaceId)) {
+      setActiveWorkspaceId(workspaces[0].id);
+    }
+  }, [workspaces, activeWorkspaceId]);
 
   // Toast notification listener
   useEffect(() => {
@@ -107,61 +201,168 @@ export default function App() {
     return () => window.removeEventListener('app_toast_notify', handleToast);
   }, []);
 
-  const refreshAppData = async () => {
-    setIsFetchingData(true);
+  // Connectivity: track online/offline + pending queue, and sync once the
+  // connection returns. The interval retries when the browser reports online
+  // but the server was unreachable during the last attempt.
+  useEffect(() => {
+    const handleSyncStatus = (e) => setSyncStatus(e.detail);
+    const handleOnline = () => {
+      emitSyncStatus();
+      refreshRef.current?.();
+    };
+    const handleOffline = () => emitSyncStatus();
 
-    let wsData = await fetchWorkspaces();
+    window.addEventListener('app_sync_status', handleSyncStatus);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    const retryTimer = setInterval(() => {
+      if (isOnline() && getQueue().length > 0) refreshRef.current?.();
+    }, 30000);
+    emitSyncStatus();
 
-    if (wsData === null) {
-      // fetchWorkspaces failed (network blip, token not yet attached, etc).
-      // Do NOT treat this as "no workspaces" — that would seed a duplicate
-      // "Ana Çalışma Alanı" on every failed launch. Keep whatever is
-      // currently in state and let the user retry.
-      window.dispatchEvent(new CustomEvent('app_toast_notify', {
-        detail: { message: 'Çalışma alanları yüklenemedi, tekrar denenecek.' }
-      }));
-      wsData = workspaces;
-    } else if (wsData.length === 0 && !hasSeededWorkspaceRef.current && !isSeedingWorkspaceRef.current) {
-      // Genuinely a new user with zero workspaces. Guard against this
-      // running twice in parallel (StrictMode double-mount, overlapping
-      // auth events) creating two default workspaces.
-      isSeedingWorkspaceRef.current = true;
-      try {
-        const defaultWs = { title: 'Ana Çalışma Alanı', color: '#191919' };
-        const newWs = await saveWorkspace(defaultWs);
-        if (newWs) {
-          wsData = [newWs];
-          hasSeededWorkspaceRef.current = true;
-        }
-      } finally {
-        isSeedingWorkspaceRef.current = false;
+    return () => {
+      window.removeEventListener('app_sync_status', handleSyncStatus);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      clearInterval(retryTimer);
+    };
+  }, []);
+
+  // Realtime: apply changes made on other devices (same account or shared
+  // workspace members) as they happen. Requires enable_realtime.sql.
+  useEffect(() => {
+    const sessionUserId = session?.user?.id;
+    if (!sessionUserId) return;
+
+    const handleNoteChange = (payload) => {
+      if (payload.eventType === 'DELETE') {
+        const id = payload.old?.id;
+        if (!id) return;
+        setNotes(prev => prev.filter(n => n.id !== id));
+        setTrashNotes(prev => prev.filter(t => t.id !== id));
+        return;
       }
-    }
 
-    setWorkspaces(wsData);
-    if (wsData.length > 0 && !activeWorkspaceId) {
-      setActiveWorkspaceId(wsData[0].id);
+      const row = payload.new;
+      if (row.is_trash) {
+        const item = mapTrashNoteRow(row);
+        setNotes(prev => prev.filter(n => n.id !== row.id));
+        setTrashNotes(prev => {
+          const local = prev.find(t => t.id === row.id);
+          if (local && !isNotOlder(item.updatedAt, local.updatedAt)) return prev;
+          return sortByDeletedAt([item, ...prev.filter(t => t.id !== row.id)]);
+        });
+      } else {
+        const incoming = mapNoteRow(row);
+        setTrashNotes(prev => prev.filter(t => t.id !== row.id));
+        setNotes(prev => {
+          const local = prev.find(n => n.id === row.id);
+          if (!local) return [...prev, incoming];
+          if (!isNotOlder(incoming.updatedAt, local.updatedAt)) return prev;
+          return prev.map(n => n.id === row.id ? { ...n, ...incoming } : n);
+        });
+      }
+    };
+
+    const handleWorkspaceChange = (payload) => {
+      if (payload.eventType === 'DELETE') {
+        const id = payload.old?.id;
+        if (!id) return;
+        setWorkspaces(prev => prev.filter(w => w.id !== id));
+        setTrashNotes(prev => prev.filter(t => t.id !== id));
+        return;
+      }
+
+      const row = payload.new;
+      if (row.is_trash) {
+        setWorkspaces(prev => prev.filter(w => w.id !== row.id));
+        setTrashNotes(prev => sortByDeletedAt([mapTrashWorkspaceRow(row), ...prev.filter(t => t.id !== row.id)]));
+      } else {
+        const incoming = mapWorkspaceRow(row);
+        setTrashNotes(prev => prev.filter(t => t.id !== row.id));
+        setWorkspaces(prev => {
+          const local = prev.find(w => w.id === row.id);
+          if (!local) return sortWorkspaces([...prev, incoming]);
+          if (!isNotOlder(incoming.updated_at, local.updated_at)) return prev;
+          return sortWorkspaces(prev.map(w => w.id === row.id ? { ...w, ...incoming } : w));
+        });
+      }
+    };
+
+    let hasSubscribedOnce = false;
+    const channel = supabase
+      .channel(`mynotes-sync-${sessionUserId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notes' }, handleNoteChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'workspaces' }, handleWorkspaceChange)
+      .subscribe((status) => {
+        if (status !== 'SUBSCRIBED') return;
+        // The first subscribe coincides with the initial load; later ones are
+        // reconnects, where changes may have been missed in between.
+        if (hasSubscribedOnce) refreshRef.current?.();
+        hasSubscribedOnce = true;
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [session?.user?.id]);
+
+  const refreshAppData = async () => {
+    const uid = userIdRef.current;
+    // Without a live session (offline start) requests would be rejected and
+    // queued changes dropped, so wait until auth is restored.
+    if (!uid || !hasSessionRef.current || !isOnline()) return;
+
+    setIsFetchingData(true);
+    try {
+      // Send offline changes first; if some are still pending, server data
+      // would overwrite them locally, so keep the local state for now.
+      await flushOutbox(executeQueuedOp);
+      if (getQueue().length > 0) return;
+
+      let wsData = await fetchWorkspaces();
+
+      if (wsData === null) {
+        // fetchWorkspaces failed (network blip, token not yet attached, etc).
+        // Do NOT treat this as "no workspaces" — that would seed a duplicate
+        // "Ana Çalışma Alanı" on every failed launch. Keep whatever is
+        // currently in state and let the user retry.
+        window.dispatchEvent(new CustomEvent('app_toast_notify', {
+          detail: { message: 'Çalışma alanları yüklenemedi, tekrar denenecek.' }
+        }));
+      } else if (wsData.length === 0 && !hasSeededWorkspaceRef.current && !isSeedingWorkspaceRef.current) {
+        // Genuinely a new user with zero workspaces. Guard against this
+        // running twice in parallel (StrictMode double-mount, overlapping
+        // auth events) creating two default workspaces.
+        isSeedingWorkspaceRef.current = true;
+        try {
+          const defaultWs = { title: 'Ana Çalışma Alanı', color: '#191919' };
+          const newWs = await saveWorkspace(defaultWs);
+          if (newWs) {
+            wsData = [newWs];
+            hasSeededWorkspaceRef.current = true;
+          }
+        } finally {
+          isSeedingWorkspaceRef.current = false;
+        }
+      }
+
+      const [notesData, trashData] = await Promise.all([fetchNotes(), fetchTrashNotes()]);
+
+      // The user may have signed out or switched while requests were running.
+      if (userIdRef.current !== uid) return;
+
+      if (wsData !== null) setWorkspaces(wsData);
+      if (notesData !== null) setNotes(notesData);
+      if (trashData !== null) setTrashNotes(trashData);
+      if (wsData !== null || notesData !== null || trashData !== null) {
+        hasLoadedDataRef.current = true;
+      }
+    } finally {
+      setIsFetchingData(false);
     }
-    
-    const notesData = await fetchNotes();
-    
-    // Normalize legacy statuses
-    const normalizedNotes = notesData.map(n => {
-      let st = n.status;
-      if (st === 'To Do') st = 'Yapılacaklar';
-      else if (st === 'In Progress') st = 'Devam Ediyor';
-      else if (st === 'In Review') st = 'İnceleniyor';
-      else if (st === 'Done') st = 'Tamamlandı';
-      return { ...n, status: st };
-    });
-    setNotes(normalizedNotes);
-    
-    
-    const trashData = await fetchTrashNotes();
-    setTrashNotes(trashData);
-    
-    setIsFetchingData(false);
   };
+  refreshRef.current = refreshAppData;
 
   // Fetch members when active workspace changes
   useEffect(() => {
@@ -173,7 +374,7 @@ export default function App() {
   const refreshActiveMembers = async () => {
     if (!activeWorkspaceId) return;
     const members = await getWorkspaceMembers(activeWorkspaceId);
-    
+
     // Always include the current user dynamically if not found
     const hasMe = members.some(m => m.email === session?.user?.email);
     if (!hasMe && session?.user) {
@@ -206,10 +407,16 @@ export default function App() {
     return n.status === activeCategory;
   });
 
+  // Replaces a note in the list (and in the open drawer) after a save.
+  const applySavedNote = (noteId, savedNote) => {
+    setNotes(prev => prev.map(n => n.id === noteId ? savedNote : n));
+    setSelectedNote(prev => (prev && prev.id === noteId ? savedNote : prev));
+  };
+
   const handleUpdateStatus = async (noteId, newStatus) => {
     const noteToUpdate = notes.find(n => n.id === noteId);
     if (!noteToUpdate) return;
-    
+
     let updatedNote = { ...noteToUpdate, status: newStatus };
 
     // Otomatik tarih atama mantığı:
@@ -217,33 +424,27 @@ export default function App() {
     // Bitiş tarihi ise yalnızca "Tamamlandı" durumuna geçerse otomatik ayarlanır.
     if (newStatus === 'Tamamlandı') {
       updatedNote.endDate = new Date().toISOString();
-      window.dispatchEvent(new CustomEvent('app_toast_notify', { 
-        detail: { message: 'Görev başarıyla tamamlandı!' } 
+      window.dispatchEvent(new CustomEvent('app_toast_notify', {
+        detail: { message: 'Görev başarıyla tamamlandı!' }
       }));
     }
 
     const result = await saveNote(updatedNote);
-    
+
     if (result) {
-       setNotes(notes.map(n => n.id === noteId ? { ...updatedNote, updatedAt: result.updated_at } : n));
-       if (selectedNote && selectedNote.id === noteId) {
-         setSelectedNote({ ...updatedNote, updatedAt: result.updated_at });
-       }
+      applySavedNote(noteId, { ...updatedNote, updatedAt: result.updated_at });
     }
   };
 
   const handleUpdateDates = async (noteId, newStartDate, newEndDate) => {
     const noteToUpdate = notes.find(n => n.id === noteId);
     if (!noteToUpdate) return;
-    
+
     const updatedNote = { ...noteToUpdate, startDate: newStartDate, endDate: newEndDate };
     const result = await saveNote(updatedNote);
-    
+
     if (result) {
-       setNotes(notes.map(n => n.id === noteId ? { ...updatedNote, updatedAt: result.updated_at } : n));
-       if (selectedNote && selectedNote.id === noteId) {
-         setSelectedNote({ ...updatedNote, updatedAt: result.updated_at });
-       }
+      applySavedNote(noteId, { ...updatedNote, updatedAt: result.updated_at });
     }
   };
 
@@ -268,26 +469,20 @@ export default function App() {
     const result = await saveNote(updatedNote);
 
     if (result) {
-      const dbSaved = { ...updatedNote, updatedAt: result.updated_at };
-      setNotes(notes.map(n => n.id === noteId ? dbSaved : n));
-      if (selectedNote && selectedNote.id === noteId) {
-        setSelectedNote(dbSaved);
-      }
+      applySavedNote(noteId, { ...updatedNote, updatedAt: result.updated_at });
     }
   };
 
   const handleUpdateTitle = async (noteId, newTitle) => {
     const noteToUpdate = notes.find(n => n.id === noteId);
     if (!noteToUpdate) return;
-    
+
     const updatedNote = { ...noteToUpdate, title: newTitle };
     const result = await saveNote(updatedNote);
-    
+
     if (result) {
-       setNotes(notes.map(n => n.id === noteId ? { ...n, title: newTitle, updatedAt: result.updated_at } : n));
-       if (selectedNote && selectedNote.id === noteId) {
-         setSelectedNote({ ...selectedNote, title: newTitle, updatedAt: result.updated_at });
-       }
+      setNotes(prev => prev.map(n => n.id === noteId ? { ...n, title: newTitle, updatedAt: result.updated_at } : n));
+      setSelectedNote(prev => (prev && prev.id === noteId ? { ...prev, title: newTitle, updatedAt: result.updated_at } : prev));
     }
   };
 
@@ -295,33 +490,60 @@ export default function App() {
     const result = await saveNote(updatedNote);
     if (result) {
       const dbSavedNote = { ...updatedNote, id: result.id, updatedAt: result.updated_at };
-      setNotes(notes.map(n => (n.id === updatedNote.id || n.id === result.id) ? dbSavedNote : n));
+      setNotes(prev => prev.map(n => (n.id === updatedNote.id || n.id === result.id) ? dbSavedNote : n));
       setSelectedNote(dbSavedNote);
     }
   };
 
   const handleMoveToTrash = async (noteId) => {
+    const note = notes.find(n => n.id === noteId);
     const success = await moveNoteToTrash(noteId);
     if (success) {
-      refreshAppData();
+      const now = new Date().toISOString();
+      setNotes(prev => prev.filter(n => n.id !== noteId));
+      if (note) {
+        setTrashNotes(prev => sortByDeletedAt([
+          { ...note, is_trash: true, type: 'note', updatedAt: now, deletedAt: now },
+          ...prev.filter(t => t.id !== noteId)
+        ]));
+      }
       setSelectedNote(null);
     }
   };
 
-  const handleRestoreFromTrash = async (noteId) => {
-    const success = await restoreNoteFromTrash(noteId);
-    if (success) refreshAppData();
+  const handleRestoreFromTrash = async (itemId) => {
+    const item = trashNotes.find(t => t.id === itemId);
+    const success = await restoreNoteFromTrash(itemId);
+    if (!success) return;
+
+    setTrashNotes(prev => prev.filter(t => t.id !== itemId));
+    if (item?.type === 'note') {
+      const { type: _type, deletedAt: _deletedAt, ...note } = item;
+      setNotes(prev => [...prev.filter(n => n.id !== itemId), { ...note, is_trash: false, updatedAt: new Date().toISOString() }]);
+    } else if (item?.type === 'workspace') {
+      setWorkspaces(prev => [
+        ...prev.filter(w => w.id !== itemId),
+        { id: item.id, title: item.name, name: item.name, icon: item.icon, color: '#191919', order: prev.length, is_trash: false }
+      ]);
+    }
+    if (isOnline()) refreshAppData();
   };
 
-  const handlePermanentlyDelete = async (noteId) => {
-    const success = await permanentlyDeleteNote(noteId);
-    if (success) refreshAppData();
+  const handlePermanentlyDelete = async (itemId) => {
+    const success = await permanentlyDeleteNote(itemId);
+    if (success) {
+      setTrashNotes(prev => prev.filter(t => t.id !== itemId));
+      if (isOnline()) refreshAppData();
+    }
   };
 
   const handleEmptyTrash = async () => {
     if (window.confirm('Geri Dönüşüm Kutusu\'ndaki tüm notlar kalıcı olarak silinecek. Emin misiniz?')) {
       const success = await emptyTrashBin();
-      if (success) refreshAppData();
+      if (success) {
+        setTrashNotes([]);
+        if (isOnline()) refreshAppData();
+      }
     }
   };
 
@@ -331,7 +553,7 @@ export default function App() {
     const maxOrder = workspaceNotes.length > 0 ? Math.max(...workspaceNotes.map(n => n.order || 0)) : -1;
 
     const newNote = {
-      id: `note-${Date.now()}`, // Temporary ID until saved to DB
+      id: `note-${Date.now()}`, // Temporary ID; saveNote assigns a real UUID
       workspaceId: activeWorkspaceId,
       title: 'Yeni Not / Görev Başlığı',
       status: 'Yapılacaklar',
@@ -346,7 +568,8 @@ export default function App() {
     const result = await saveNote(newNote);
     if (result) {
       const realNote = { ...newNote, id: result.id, updatedAt: result.updated_at, createdAt: result.created_at };
-      setNotes([...notes, realNote]);
+      // A realtime echo may have inserted the row already.
+      setNotes(prev => [...prev.filter(n => n.id !== realNote.id), realNote]);
       setSelectedNote(realNote);
     }
   };
@@ -354,19 +577,23 @@ export default function App() {
   const handleUpdateWorkspace = async (wsId, newName, newIcon) => {
     const wsToUpdate = workspaces.find(w => w.id === wsId);
     if (!wsToUpdate) return;
-    
+
     const updatedWs = { ...wsToUpdate, title: newName, icon: newIcon };
     const result = await saveWorkspace(updatedWs);
     if (result) {
-      setWorkspaces(workspaces.map(w => w.id === wsId ? { ...w, title: result.title, icon: result.icon } : w));
+      // Sidebar renders ws.name, so it must be updated together with title.
+      setWorkspaces(prev => prev.map(w => w.id === wsId
+        ? { ...w, title: result.title, name: result.title, icon: result.icon, color: result.color, updated_at: result.updated_at }
+        : w
+      ));
     }
   };
 
   const handleAddWorkspace = async (name, icon) => {
-    const newWs = { title: name, color: '#191919', icon };
+    const newWs = { title: name, color: '#191919', icon, order: workspaces.length };
     const result = await saveWorkspace(newWs);
     if (result) {
-      setWorkspaces([...workspaces, result]);
+      setWorkspaces(prev => [...prev.filter(w => w.id !== result.id), result]);
       setActiveWorkspaceId(result.id);
     }
   };
@@ -377,20 +604,26 @@ export default function App() {
       return;
     }
 
+    const ws = workspaces.find(w => w.id === wsId);
     const success = await deleteWorkspace(wsId);
     if (success) {
-      const updatedWs = workspaces.filter(w => w.id !== wsId);
-      setWorkspaces(updatedWs);
-      if (activeWorkspaceId === wsId) {
-        setActiveWorkspaceId(updatedWs[0]?.id || null);
+      setWorkspaces(prev => prev.filter(w => w.id !== wsId));
+      if (ws) {
+        const now = new Date().toISOString();
+        setTrashNotes(prev => sortByDeletedAt([
+          { id: ws.id, name: ws.name, icon: ws.icon, type: 'workspace', deletedAt: now },
+          ...prev.filter(t => t.id !== wsId)
+        ]));
       }
-      refreshAppData();
+      if (isOnline()) refreshAppData();
     }
   };
 
   const handleReorderWorkspaces = async (reorderedWorkspaces) => {
-    setWorkspaces(reorderedWorkspaces); // Update UI immediately
-    const updates = reorderedWorkspaces.map((ws, index) => ({ id: ws.id, order: index }));
+    // Write the index onto each workspace so realtime/sorting agree with the drag result.
+    const renumbered = reorderedWorkspaces.map((ws, index) => ({ ...ws, order: index }));
+    setWorkspaces(renumbered); // Update UI immediately
+    const updates = renumbered.map(ws => ({ id: ws.id, order: ws.order }));
     await updateWorkspaceOrders(updates);
   };
 
@@ -436,6 +669,8 @@ export default function App() {
     );
   }
 
+  const showSyncPill = userId && (!syncStatus.online || syncStatus.pending > 0 || syncStatus.flushing);
+
   return (
     <div className="app-container">
       {/* Hamburger + backdrop only render/act as a drawer toggle below 768px (see index.css) */}
@@ -477,12 +712,51 @@ export default function App() {
           </div>
         )}
 
-        {(!session) ? (
+        {showSyncPill && (
+          <div style={{
+            position: 'absolute',
+            bottom: '16px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 100,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: '#252525',
+            border: `1px solid ${syncStatus.online ? '#2eaadc' : '#f59e0b'}`,
+            color: 'var(--text-main)',
+            padding: '6px 12px',
+            borderRadius: '999px',
+            fontSize: '0.78rem',
+            fontWeight: 600,
+            whiteSpace: 'nowrap',
+            boxShadow: 'var(--shadow-md)',
+            pointerEvents: 'none'
+          }}>
+            {syncStatus.online ? (
+              <>
+                <RefreshCw size={14} className={syncStatus.flushing ? 'spin-loader' : undefined} style={{ color: '#2eaadc' }} />
+                <span>
+                  {syncStatus.flushing ? 'Eşitleniyor…' : `${syncStatus.pending} değişiklik eşitlenmeyi bekliyor`}
+                </span>
+              </>
+            ) : (
+              <>
+                <CloudOff size={14} style={{ color: '#f59e0b' }} />
+                <span>
+                  Çevrimdışı{syncStatus.pending > 0 ? ` · ${syncStatus.pending} bekleyen değişiklik` : ''}
+                </span>
+              </>
+            )}
+          </div>
+        )}
+
+        {(!userId) ? (
           <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
             Lütfen notlarınızı görüntülemek için giriş yapın.
           </div>
         ) : activeCategory === 'trash' ? (
-          <TrashView 
+          <TrashView
             trashNotes={trashNotes}
             onRestoreNote={handleRestoreFromTrash}
             onPermanentlyDeleteNote={handlePermanentlyDelete}
@@ -491,7 +765,7 @@ export default function App() {
         ) : (
           <>
             {activeView === 'all-projects' && (
-              <TableView 
+              <TableView
                 notes={displayedNotes}
                 activeView={activeView}
                 setActiveView={setActiveView}
@@ -501,6 +775,7 @@ export default function App() {
                 onUpdateDates={handleUpdateDates}
                 onNewNote={handleNewNote}
                 onReorderNotes={handleReorderNotes}
+                activeWorkspaceId={activeWorkspaceId}
               />
             )}
 
@@ -542,7 +817,7 @@ export default function App() {
         onDelete={handleMoveToTrash}
       />
 
-      <AuthModal 
+      <AuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
         session={session}

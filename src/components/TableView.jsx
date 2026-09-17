@@ -32,7 +32,8 @@ export default function TableView({
   onUpdateTitle,
   onUpdateDates,
   onNewNote,
-  onReorderNotes 
+  onReorderNotes,
+  activeWorkspaceId
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   // Mobile only: the search input is collapsed behind an icon button and
@@ -84,6 +85,24 @@ export default function TableView({
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [resizingCol]);
+
+  // Long lists overflow the screen and the newest notes sit at the bottom, so
+  // start the view scrolled to the end: on mount, when switching workspace, and
+  // whenever the list grows (initial load, a newly added note). Edits and
+  // re-sorts keep the current scroll position.
+  const containerRef = React.useRef(null);
+  const scrollStateRef = React.useRef({ workspaceId: undefined, length: 0 });
+
+  React.useLayoutEffect(() => {
+    const prev = scrollStateRef.current;
+    const workspaceChanged = prev.workspaceId !== activeWorkspaceId;
+    const grew = notes.length > prev.length;
+    scrollStateRef.current = { workspaceId: activeWorkspaceId, length: notes.length };
+
+    if ((workspaceChanged || grew) && containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    }
+  }, [activeWorkspaceId, notes.length]);
 
   // Auto-fit on double click
   const tableRef = React.useRef(null);
@@ -275,7 +294,7 @@ export default function TableView({
       </div>
 
       {/* Table Container */}
-      <div className="table-view-container">
+      <div className="table-view-container" ref={containerRef}>
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <table className="notion-table" ref={tableRef} style={{ tableLayout: 'fixed', width: 'max-content' }}>
           <thead>
